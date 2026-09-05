@@ -138,6 +138,13 @@
         document.getElementById('resultsBlock').style.display = 'block';
     }
 </script>
+<script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js')
+        .then(() => console.log('Aplicativo pronto para funcionar Offline!'))
+        .catch((err) => console.log('Erro ao ativar modo offline:', err));
+    }
+</script>
 
 </body>
 </html>
