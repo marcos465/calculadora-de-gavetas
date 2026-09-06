@@ -1,26 +1,25 @@
 /**
- * @fileoverview Engine de cálculo e estimativa de ferragens e insumos para marcenaria.
+ * @fileoverview Engine de cálculo e estimativa de ferragens, suportes e insumos para marcenaria.
  * @module modules/engine/hardwareList
  */
 
 /**
- * Representa um item gerado no cálculo de ferragens.
+ * Item calculado de ferragem ou insumo.
  * @typedef {Object} HardwareItem
- * @property {string} item - Nome descritivo da ferragem ou acessório.
- * @property {number} quantity - Quantidade necessária.
+ * @property {string} item - Descrição da ferragem/insumo.
+ * @property {number} quantity - Quantidade calculada.
  * @property {string} unit - Unidade de medida (ex: 'par', 'unidade', 'metro').
- * @property {string} details - Detalhes técnicos, especificações ou observações do item.
+ * @property {string} details - Especificação e contexto de aplicação.
  */
 
 /**
- * Processador técnico responsável por determinar as ferragens necessárias
- * com base na estrutura e acessórios configurados no estado do móvel.
+ * Calculador especializado em determinação de insumos metálicos e funcionais.
  */
 export class HardwareListEngine {
     /**
-     * Ponto de entrada principal para cálculo e geração da lista de ferragens.
-     * @param {import('../../models/FurnitureState.js').FurnitureState} furnitureState Instância do estado do móvel.
-     * @returns {HardwareItem[]} Lista detalhada de ferragens e acessórios necessários.
+     * Calcula e compila a lista detalhada de ferragens.
+     * @param {import('../../models/FurnitureState.js').FurnitureState} furnitureState
+     * @returns {HardwareItem[]}
      */
     generateList(furnitureState) {
         if (!furnitureState) {
@@ -33,16 +32,15 @@ export class HardwareListEngine {
             width,
             depth,
             drawerCount,
+            doorCount,
+            shelfCount,
             hasProfileHandle,
             type,
             plinthHeight
         } = furnitureState;
 
         // ---------------------------------------------------------------------
-        // 1. CORREDIÇAS TELESCÓPICAS (1 Par por Gaveta)
-        // Regra Técnica:
-        // O comprimento nominal comercial da corrediça (250mm a 600mm, em passos de 50mm)
-        // é determinado pela profundidade útil da gaveta (depth - 50mm de folga traseira).
+        // 1. CORREDIÇAS TELESCÓPICAS
         // ---------------------------------------------------------------------
         if (drawerCount > 0) {
             const rawDepth = depth - 50;
@@ -52,103 +50,97 @@ export class HardwareListEngine {
                 item: `Corrediça Telescópica ${slideSize}mm`,
                 quantity: drawerCount,
                 unit: 'par',
-                details: `Tamanho nominal de ${slideSize}mm para gavetas com folga traseira`
+                details: `1 par por gaveta (comprimento ${slideSize}mm)`
             });
         }
 
         // ---------------------------------------------------------------------
         // 2. DOBRADIÇAS DE PRESSÃO (35mm)
-        // Estima portas com base no tipo do móvel, largura e gavetas.
-        // Dimensionamento por altura útil da porta:
-        //   - Até 900mm: 2 dobradiças por porta
-        //   - 901mm a 1500mm: 3 dobradiças por porta
-        //   - 1501mm a 2000mm: 4 dobradiças por porta
-        //   - Acima de 2000mm: 5 dobradiças por porta
         // ---------------------------------------------------------------------
-        const doorCount = this._estimateDoorCount(type, width, drawerCount);
-
         if (doorCount > 0) {
             const cabinetBodyHeight = height - (type === 'WALL_CABINET' ? 0 : plinthHeight);
-            const doorHeight = cabinetBodyHeight - 6; // Desconto de revelo
+            const doorHeight = cabinetBodyHeight - 6;
             const hingesPerDoor = this._calculateHingesPerDoor(doorHeight);
             const totalHinges = doorCount * hingesPerDoor;
 
             list.push({
-                item: 'Dobradiça Curva/Reta 35mm (Com Amortecedor)',
+                item: 'Dobradiça Reta/Curva 35mm (Com Amortecedor)',
                 quantity: totalHinges,
                 unit: 'unidade',
-                details: `${doorCount} porta(s) com ${hingesPerDoor} dobradiças por porta (Altura útil: ${doorHeight}mm)`
+                details: `${doorCount} porta(s) com ${hingesPerDoor} dobradiças por porta`
             });
         }
 
         // ---------------------------------------------------------------------
-        // 3. PUXADORES / PERFIS DE ALUMÍNIO
+        // 3. SUPORTES DE PRATELEIRA / TAQUETES
+        // ---------------------------------------------------------------------
+        if (shelfCount > 0) {
+            // 4 suportes/taquetes metálicos por prateleira
+            const totalPins = shelfCount * 4;
+            list.push({
+                item: 'Suporte de Prateleira (Taquete Metal 5mm)',
+                quantity: totalPins,
+                unit: 'unidade',
+                details: `4 suportes por prateleira para ${shelfCount} prateleira(s) interna(s)`
+            });
+        }
+
+        // ---------------------------------------------------------------------
+        // 4. PUXADORES / PERFIS DE ALUMÍNIO
         // ---------------------------------------------------------------------
         const totalFronts = drawerCount + doorCount;
 
         if (totalFronts > 0) {
             if (hasProfileHandle) {
-                // Cálculo da metragem linear necessária de perfil de alumínio Gola
-                const profileMetersPerFront = (width - 10) / 1000;
-                const totalMeters = (profileMetersPerFront * totalFronts).toFixed(2);
-
+                const profileMeters = Number(((width / 1000) * 1.1).toFixed(2));
                 list.push({
                     item: 'Perfil Puxador Alumínio Tipo Gola / Y',
-                    quantity: Number(totalMeters),
+                    quantity: profileMeters,
                     unit: 'metro',
-                    details: `Perfil contínuo cortado para ${totalFronts} frente(s) de ~${width - 10}mm cada`
+                    details: `Barra contínua para corte no vão total de ${width}mm`
                 });
 
                 list.push({
-                    item: 'Ponteira de Acabamento para Perfil Gola',
-                    quantity: totalFronts * 2,
+                    item: 'Ponteiras para Perfil Gola (Pares)',
+                    quantity: totalFronts,
                     unit: 'par',
-                    details: 'Ponteiras E/D de acabamento lateral para os perfis cortados'
+                    details: 'Ponteiras de acabamento lateral em ABS'
                 });
             } else {
                 list.push({
                     item: 'Puxador Alça / Ponto',
                     quantity: totalFronts,
                     unit: 'unidade',
-                    details: `1 puxador para cada frente de gaveta ou porta (${totalFronts} no total)`
+                    details: `1 puxador por frente de gaveta ou porta`
                 });
             }
         }
 
         // ---------------------------------------------------------------------
-        // 4. FIXAÇÕES E INSUMOS ESTRUTURAIS
+        // 5. PARAFUSOS E UNÕES ESTRUTURAIS
         // ---------------------------------------------------------------------
-        const structuralScrews = 16 + (drawerCount * 8);
+        const structuralScrews = 20 + (drawerCount * 8) + (shelfCount * 4);
         list.push({
-            item: 'Parafuso Chipboard 4,0x40mm',
+            item: 'Parafuso Chipboard 4,0x40mm (Estrutural)',
             quantity: structuralScrews,
             unit: 'unidade',
-            details: 'Fixação da estrutura da caixa e caixas de gaveta'
+            details: 'Fixação de caixa, divisórias e estrutura principal'
         });
 
-        const hardwareScrews = (drawerCount * 12) + (doorCount * 8) + 24;
+        const hardwareScrews = (drawerCount * 12) + (doorCount * 8) + 16;
         list.push({
-            item: 'Parafuso Chipboard 3,5x16mm',
+            item: 'Parafuso Chipboard 3,5x16mm (Ferragens)',
             quantity: hardwareScrews,
             unit: 'unidade',
-            details: 'Fixação de corrediças, dobradiças, rebaixos e cantoneiras'
+            details: 'Fixação de dobradiças, corrediças e calços'
         });
-
-        if (type === 'WALL_CABINET') {
-            list.push({
-                item: 'Suporte Suspenso Oculto / Cantoneira 2 Furos com Capa',
-                quantity: 2,
-                unit: 'par',
-                details: 'Fixação e regulagem do armário aéreo na parede'
-            });
-        }
 
         if (plinthHeight > 0 && type !== 'WALL_CABINET') {
             list.push({
-                item: 'Sapata Niveladora Plástica L com Parafuso',
-                quantity: width > 1000 ? 6 : 4,
+                item: 'Sapata Niveladora L com Parafuso',
+                quantity: width > 1200 ? 6 : 4,
                 unit: 'unidade',
-                details: 'Ajuste de nível e isolamento contra umidade do piso'
+                details: 'Isolamento de umidade do solo e nivelamento'
             });
         }
 
@@ -156,34 +148,10 @@ export class HardwareListEngine {
     }
 
     /**
-     * Estima o número de portas com base no tipo de móvel, largura total e gavetas.
+     * Determina a quantidade necessária de dobradiças baseada na altura útil da porta.
      * @private
-     * @param {string} type Tipo do móvel.
-     * @param {number} width Largura total em mm.
-     * @param {number} drawerCount Quantidade de gavetas.
-     * @returns {number} Quantidade estimada de portas.
-     */
-    _estimateDoorCount(type, width, drawerCount) {
-        if (drawerCount > 0 && width <= 600) {
-            return 0;
-        }
-
-        if (drawerCount > 0 && width > 600) {
-            return 1;
-        }
-
-        if (width <= 500) {
-            return 1;
-        } else {
-            return 2;
-        }
-    }
-
-    /**
-     * Determina o número necessário de dobradiças por porta baseado em sua altura útil.
-     * @private
-     * @param {number} doorHeight Altura útil da porta em mm.
-     * @returns {number} Quantidade de dobradiças.
+     * @param {number} doorHeight Altura da porta em mm.
+     * @returns {number} Quantidade de dobradiças por porta.
      */
     _calculateHingesPerDoor(doorHeight) {
         if (doorHeight <= 900) return 2;
