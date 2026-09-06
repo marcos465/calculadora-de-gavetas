@@ -1,15 +1,12 @@
 /**
- * @fileoverview Modelo de estado representativo do móvel e suas configurações estruturais.
+ * @fileoverview Modelo de estado do móvel com validações e parâmetros construtivos.
  * @module models/FurnitureState
  */
 
-/**
- * Define o layout estrutural quando há divisão de vãos (ex: Gavetas + Portas).
- * @typedef {'LEFT_DRAWERS' | 'RIGHT_DRAWERS' | 'FULL_WIDTH'} DrawerLayout
- */
+import { SIDE_CONSTRUCTION_TYPES } from '../config/constants.js';
 
 /**
- * Classe de modelo para armazenar, validar e exportar o estado de configuração do móvel.
+ * Representa a configuração e o estado completo de um projeto de móvel.
  */
 export class FurnitureState {
     constructor() {
@@ -17,15 +14,17 @@ export class FurnitureState {
         this.width = 1200;            // Largura total em mm
         this.height = 870;            // Altura total em mm (incluindo rodapé)
         this.depth = 550;             // Profundidade total em mm
-        this.mdfThickness = 15;       // Espessura do MDF/MDP em mm
+        this.mdfThickness = 15;       // Espessura do MDF da caixa em mm
+        this.drawerMdfThickness = 15; // Espessura do MDF das gavetas em mm
         this.plinthHeight = 150;      // Altura do rodapé em mm
         this.drawerCount = 3;         // Quantidade de gavetas
         this.doorCount = 2;           // Quantidade de portas
         this.shelfCount = 1;          // Quantidade de prateleiras internas
         this.hasProfileHandle = true;  // Utiliza perfil de alumínio/gola
         this.finishType = 'Branco';   // Cor/Acabamento
-        /** @type {DrawerLayout} */
-        this.drawerLayout = 'LEFT_DRAWERS'; // Disposição das gavetas se houver divisão
+        this.drawerLayout = 'LEFT_DRAWERS'; // Disposição das gavetas ('LEFT_DRAWERS', 'RIGHT_DRAWERS', 'FULL_WIDTH')
+        /** @type {string} Tipo de construção da lateral */
+        this.sideConstruction = SIDE_CONSTRUCTION_TYPES.OVER_BASE;
     }
 
     /**
@@ -40,6 +39,7 @@ export class FurnitureState {
         if (data.height !== undefined) this.height = Number(data.height);
         if (data.depth !== undefined) this.depth = Number(data.depth);
         if (data.mdfThickness !== undefined) this.mdfThickness = Number(data.mdfThickness);
+        if (data.drawerMdfThickness !== undefined) this.drawerMdfThickness = Number(data.drawerMdfThickness);
         if (data.plinthHeight !== undefined) this.plinthHeight = Number(data.plinthHeight);
         if (data.drawerCount !== undefined) this.drawerCount = Number(data.drawerCount);
         if (data.doorCount !== undefined) this.doorCount = Number(data.doorCount);
@@ -47,10 +47,13 @@ export class FurnitureState {
         if (data.hasProfileHandle !== undefined) this.hasProfileHandle = Boolean(data.hasProfileHandle);
         if (data.finishType !== undefined) this.finishType = String(data.finishType);
         if (data.drawerLayout !== undefined) this.drawerLayout = String(data.drawerLayout);
+        if (data.sideConstruction !== undefined) {
+            this.sideConstruction = String(data.sideConstruction);
+        }
     }
 
     /**
-     * Valida os parâmetros de dimensão e regras mínimas de construção.
+     * Valida os parâmetros dimensionais e regras de integridade física da peça.
      * @returns {{isValid: boolean, errors: string[]}}
      */
     validate() {
@@ -80,9 +83,8 @@ export class FurnitureState {
             errors.push('A quantidade de gavetas deve ser entre 0 e 8.');
         }
 
-        // Validação estrutural de coerência
-        if (this.width > 800 && this.drawerCount > 0 && this.doorCount === 0 && this.drawerLayout !== 'FULL_WIDTH') {
-            errors.push('Para móveis sem portas, selecione o layout "Apenas Gavetas / Apenas Portas".');
+        if (!Object.values(SIDE_CONSTRUCTION_TYPES).includes(this.sideConstruction)) {
+            errors.push('Tipo de construção da lateral inválido.');
         }
 
         return {
@@ -92,7 +94,7 @@ export class FurnitureState {
     }
 
     /**
-     * Retorna uma cópia serializável limpa do estado atual.
+     * Retorna um objeto limpo para exportação ou inspeção.
      * @returns {Object}
      */
     toObject() {
@@ -102,13 +104,15 @@ export class FurnitureState {
             height: this.height,
             depth: this.depth,
             mdfThickness: this.mdfThickness,
+            drawerMdfThickness: this.drawerMdfThickness,
             plinthHeight: this.plinthHeight,
             drawerCount: this.drawerCount,
             doorCount: this.doorCount,
             shelfCount: this.shelfCount,
             hasProfileHandle: this.hasProfileHandle,
             finishType: this.finishType,
-            drawerLayout: this.drawerLayout
+            drawerLayout: this.drawerLayout,
+            sideConstruction: this.sideConstruction
         };
     }
 }
