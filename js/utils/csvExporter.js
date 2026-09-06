@@ -1,202 +1,119 @@
 /**
- * @fileoverview Utilitário para exportação de listas de corte no formato CSV compatível com CutList Optimizer.
- * @module utils/csvExporter
- */
-
-/**
- * Representa um item da lista de corte retornado pe/**
  * @fileoverview Módulo utilitário para exportação de listas de corte no formato CSV
  * compatível com o CutList Optimizer, executado 100% no lado do cliente (Client-side).
+ * 
  * @module utils/csvExporter
  */
 
 /**
- * Encapsula e escapa campos de texto para evitar corrupção da estrutura do CSV
- * caso contenham aspas duplas, vírgulas ou quebras de linha.
- * 
- * @param {string | number} val - Valor do campo a ser formatado.
- * @returns {string} Valor escapado pronto para inclusão no arquivo CSV.
+ * Normaliza e sanitiza um valor de texto para inserção segura dentro de um arquivo CSV.
+ * Remove quebras de linha e escapa aspas duplas de acordo com o padrão RFC 4180.
+ *
+ * @param {string | number} val - Valor bruto a ser sanitizado.
+ * @returns {string} String limpa para inclusão nas colunas do CSV.
  */
-function escapeCSVField(val) {
+function sanitizeCSVText(val) {
     if (val === null || val === undefined) {
-        return '""';
+        return '';
     }
-    const str = String(val).trim();
-    if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
-        return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
+    // Converte para string e substitui aspas duplas por aspas duplas duplas (" -> "")
+    const str = String(val).trim().replace(/"/g, '""');
+    // Remove quebras de linha para não quebrar a estrutura de linhas do CSV
+    return str.replace(/[\r\n]+/g, ' ');
 }
 
 /**
- * Converte um array de peças de corte em uma string formatada em CSV compatível
- * com o padrão exigido pelo CutList Optimizer e dispara o download nativo via Blob no navegador.
+ * Garante que valores numéricos sejam formatados corretamente sem vírgulas decimais,
+ * mantendo o ponto como separador decimal universal exigido pelo CutList Optimizer.
  *
- * @param {Array<{length: number, width: number, quantity: number, material: string, name: string}>} items - Lista de peças de corte.
- * @param {string} [filename='corte_balcao_cutlist.csv'] - Nome sugerido para o arquivo baixado.
- * @returns {void}
+ * @param {number | string} value - Valor numérico a ser validado e formatado.
+ * @param {number} [fallback=0] - Valor padrão caso a conversão falhe.
+ * @returns {number} Número válido e positivo.
  */
-export function exportToCutListCSV(items, filename = 'corte_balcao_cutlist.csv') {
-    // 1. Tratamento de Exceções e Validação de Entrada
-    if (!Array.isArray(items) || items.length === 0) {
-        alert('Atenção: Não há itens na lista de corte para serem exportados.');
-        console.warn('[csvExporter] Tentativa de exportação com array de itens vazio ou inválido.');
-        return;
+function parseNumericValue(value, fallback = 0) {
+    if (typeof value === 'number' && !isNaN(value)) {
+        return Math.abs(value);
     }
-
-    try {
-        // 2. Formatação do Cabeçalho e Conteúdo (CutList Optimizer Spec)
-        const headers = ['Length', 'Width', 'Qty', 'Material', 'Label', 'Enabled'];
-        const csvRows = [headers.join(',')];
-
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-
-            // Extração e higienização dos valores
-            const rawLength = Number(item.length || item.height || 0);
-            const rawWidth = Number(item.width || 0);
-            const quantity = Number(item.quantity || item.qty || 1);
-
-            // Garantia matemática: CutList Optimizer espera Length >= Width
-            const length = Math.max(rawLength, rawWidth);
-            const width = Math.min(rawLength, rawWidth);
-
-            const material = item.material ? String(item.material) : `MDF ${item.thickness || 15}mm`;
-            const name = item.name || item.label || `Peça ${i + 1}`;
-            const enabled = true;
-
-            // Montagem da linha com escape rigoroso
-            const row = [
-                length,
-                width,
-                quantity,
-                escapeCSVField(material),
-                escapeCSVField(name),
-                enabled
-            ];
-
-            csvRows.push(row.join(','));
-        }
-
-        // Unificação das linhas utilizando a quebra de linha padrão universal (\r\n)
-        const csvString = csvRows.join('\r\n');
-
-        // 3. Geração do Download NATIVO (Browser Blob sem Back-end)
-        // Adiciona o caractere BOM (\uFEFF) para forçar o Excel e ferramentas a lerem o arquivo em UTF-8 corretamente
-        const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8;' });
-        const blobUrl = URL.createObjectURL(blob);
-
-        const downloadLink = document.createElement('a');
-        downloadLink.href = blobUrl;
-        downloadLink.setAttribute('download', filename);
-
-        // Oculta o elemento temporário antes da anexação no DOM
-        downloadLink.style.display = 'none';
-        document.body.appendChild(downloadLink);
-
-        // Dispara a interatividade de download nativa do navegador
-        downloadLink.click();
-
-        // Limpeza de memória e remoção do nó do DOM
-        document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(blobUrl);
-
-    } catch (error) {
-        console.error('[csvExporter] Ocorreu uma falha ao gerar o arquivo CSV:', error);
-        alert('Ocorreu um erro inesperado ao gerar o arquivo CSV de corte. Tente novamente.');
+    if (typeof value === 'string') {
+        // Substitui vírgula por ponto caso venha formatado no padrão PT-BR
+        const parsed = parseFloat(value.replace(',', '.'));
+        return !isNaN(parsed) ? Math.abs(parsed) : fallback;
     }
-}lo CuttingListEngine.
- * @typedef {Object} CuttingItem
- * @property {string} name - Nome descritivo da peça.
- * @property {number} quantity - Quantidade de peças idênticas.
- * @property {number} height - Comprimento/Altura da peça em mm.
- * @property {number} width - Largura da peça em mm.
- * @property {number} thickness - Espessura da chapa MDF em mm.
- * @property {string} [edgeBanding] - Padrão de aplicação de fita de borda.
- * @property {string} [description] - Detalhes e aplicação técnica.
- */
-
-/**
- * Formata um valor textual para o padrão CSV, tratando aspas duplas e vírgulas internas.
- * 
- * @param {string | number} val - Valor a ser formatado.
- * @returns {string} Valor escapado para CSV.
- */
-function escapeCSVField(val) {
-    if (val === null || val === undefined) {
-        return '""';
-    }
-    const str = String(val).trim();
-    // Se o valor contiver aspas, vírgulas ou quebras de linha, envolve em aspas e duplica as aspas internas.
-    if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
-        return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
+    return fallback;
 }
 
 /**
- * Converte a lista de peças de corte em uma string CSV no formato CutList Optimizer
- * e dispara o download nativo no navegador.
+ * Converte um array de peças de corte em um arquivo CSV formatado para o CutList Optimizer
+ * e dispara o download automático nativo via browser (Blob).
  *
- * @param {CuttingItem[]} items - Array de peças gerado pelo CuttingListEngine.
+ * @param {Array<Object>} items - Lista das peças de corte a serem exportadas.
+ * @param {number|string} items[].length - Comprimento da peça.
+ * @param {number|string} [items[].height] - Fallback de comprimento caso length não esteja definido.
+ * @param {number|string} items[].width - Largura da peça.
+ * @param {number|string} [items[].quantity] - Quantidade de peças.
+ * @param {number|string} [items[].qty] - Fallback de quantidade.
+ * @param {string} [items[].material] - Tipo de material / MDF.
+ * @param {string} [items[].name] - Nome ou etiqueta da peça (Label).
+ * @param {string} [items[].label] - Fallback de nome da peça.
  * @param {string} [filename='corte_balcao_cutlist.csv'] - Nome do arquivo para download.
  * @returns {void}
  */
 export function exportToCutListCSV(items, filename = 'corte_balcao_cutlist.csv') {
+    // 1. Validação do parâmetro de entrada
     if (!Array.isArray(items) || items.length === 0) {
-        console.warn('exportToCutListCSV: Nenhuma peça fornecida para exportação.');
+        alert('Lista de corte vazia!');
         return;
     }
 
-    // 1. Cabeçalho exato exigido pelo CutList Optimizer
-    const headers = ['Length', 'Width', 'Qty', 'Material', 'Label', 'Enabled'];
-    const rows = [headers.join(',')];
+    try {
+        // 2. Formatação do Cabeçalho e Conteúdo (CutList Optimizer)
+        const header = 'Length,Width,Qty,Material,Label,Enabled';
+        const csvLines = [header];
 
-    // 2. Mapeamento e formatação de cada peça do projeto
-    for (const item of items) {
-        const dim1 = Number(item.height) || 0;
-        const dim2 = Number(item.width) || 0;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
 
-        // CutList Spec: Length deve ser sempre a maior dimensão, e Width a menor
-        const length = Math.max(dim1, dim2);
-        const width = Math.min(dim1, dim2);
-        const qty = item.quantity || 1;
-        
-        // Formata o nome do material utilizando a espessura da peça
-        const material = `MDF ${item.thickness || 15}mm`;
-        const label = item.name || 'Peça sem nome';
-        const enabled = true;
+            // Trata propriedades alternativas para garantir flexibilidade nos modelos de dados
+            const rawLength = item.length !== undefined ? item.length : item.height;
+            const rawWidth = item.width;
+            const rawQty = item.quantity !== undefined ? item.quantity : item.qty;
 
-        const row = [
-            length,
-            width,
-            qty,
-            escapeCSVField(material),
-            escapeCSVField(label),
-            enabled
-        ];
+            const length = parseNumericValue(rawLength, 0);
+            const width = parseNumericValue(rawWidth, 0);
+            const quantity = parseNumericValue(rawQty, 1);
 
-        rows.push(row.join(','));
+            const material = sanitizeCSVText(item.material || 'MDF');
+            const name = sanitizeCSVText(item.name || item.label || `Peça ${i + 1}`);
+
+            // Montagem estrita da linha segundo o requisito:
+            // ${item.length},${item.width},${item.quantity},"${item.material || 'MDF'}","${item.name}",true
+            const line = `${length},${width},${quantity},"${material}","${name}",true`;
+            csvLines.push(line);
+        }
+
+        // 3. Unificação das linhas com \n
+        const csvContent = csvLines.join('\n');
+
+        // 4. Geração do Blob NATIVO (com BOM UTF-8 \uFEFF para garantir compatibilidade universal)
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+
+        // 5. Geração e disparo do download nativo sem back-end
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+
+        document.body.appendChild(a);
+        a.click();
+
+        // 6. Limpeza de memória e remoção do elemento no DOM
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+    } catch (error) {
+        console.error('Erro ao gerar a exportação CSV da lista de corte:', error);
+        alert('Ocorreu um erro ao gerar o arquivo de exportação. Verifique o console para mais detalhes.');
     }
-
-    const csvContent = rows.join('\r\n');
-
-    // 3. Gerador de Download NATIVO (Browser Blob)
-    // Inclusão do BOM (\uFEFF) para garantir que caracteres acentuados sejam interpretados corretamente em UTF-8 no Excel/CutList.
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const downloadUrl = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.setAttribute('download', filename);
-
-    // Esconde o elemento no DOM antes do clique simulated
-    link.style.display = 'none';
-    document.body.appendChild(link);
-
-    link.click();
-
-    // Limpeza da memória do navegador e remoção do elemento
-    document.body.removeChild(link);
-    URL.revokeObjectURL(downloadUrl);
 }
