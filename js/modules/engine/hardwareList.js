@@ -58,10 +58,8 @@ export class HardwareListEngine {
 
         // ---------------------------------------------------------------------
         // 2. DOBRADIÇAS DE PRESSÃO (35mm)
-        // Cálculo de portas estimado com base na quantidade de gavetas e tipo de móvel:
-        // - Balcão de Pia / Cozinha / Aéreo sem gavetas: Assume-se 2 portas se a largura for > 500mm, senão 1 porta.
-        // - Balcão com gavetas: Se a largura for grande (> 800mm), pode haver porta lateral além das gavetas.
-        // Dimensionamento de dobradiças por porta baseado na altura útil da porta:
+        // Estima portas com base no tipo do móvel, largura e gavetas.
+        // Dimensionamento por altura útil da porta:
         //   - Até 900mm: 2 dobradiças por porta
         //   - 901mm a 1500mm: 3 dobradiças por porta
         //   - 1501mm a 2000mm: 4 dobradiças por porta
@@ -71,7 +69,7 @@ export class HardwareListEngine {
 
         if (doorCount > 0) {
             const cabinetBodyHeight = height - (type === 'WALL_CABINET' ? 0 : plinthHeight);
-            const doorHeight = cabinetBodyHeight - 6; // Desconto padrão de revelo
+            const doorHeight = cabinetBodyHeight - 6; // Desconto de revelo
             const hingesPerDoor = this._calculateHingesPerDoor(doorHeight);
             const totalHinges = doorCount * hingesPerDoor;
 
@@ -85,15 +83,12 @@ export class HardwareListEngine {
 
         // ---------------------------------------------------------------------
         // 3. PUXADORES / PERFIS DE ALUMÍNIO
-        // Se `hasProfileHandle` for verdadeiro: Puxador perfil gola em metros.
-        // Caso contrário: Puxadores ponto/alça convencionais por cada frente e porta.
         // ---------------------------------------------------------------------
         const totalFronts = drawerCount + doorCount;
 
         if (totalFronts > 0) {
             if (hasProfileHandle) {
                 // Cálculo da metragem linear necessária de perfil de alumínio Gola
-                // Comprimento do perfil por frente = Largura Total do Móvel - 10mm de acabamento/ponteiras
                 const profileMetersPerFront = (width - 10) / 1000;
                 const totalMeters = (profileMetersPerFront * totalFronts).toFixed(2);
 
@@ -101,7 +96,7 @@ export class HardwareListEngine {
                     item: 'Perfil Puxador Alumínio Tipo Gola / Y',
                     quantity: Number(totalMeters),
                     unit: 'metro',
-                    details: `Perfil continuo cortado para ${totalFronts} frente(s) de ~${width - 10}mm cada`
+                    details: `Perfil contínuo cortado para ${totalFronts} frente(s) de ~${width - 10}mm cada`
                 });
 
                 list.push({
@@ -123,17 +118,14 @@ export class HardwareListEngine {
         // ---------------------------------------------------------------------
         // 4. FIXAÇÕES E INSUMOS ESTRUTURAIS
         // ---------------------------------------------------------------------
-        // Parafuso 4.0x40mm (Soberbo / Estrutural da Caixa): ~12 parafusos por módulo base
         const structuralScrews = 16 + (drawerCount * 8);
         list.push({
-            name: 'Parafuso Chipboard 4,0x40mm (Cabeça Chata)',
             item: 'Parafuso Chipboard 4,0x40mm',
             quantity: structuralScrews,
             unit: 'unidade',
             details: 'Fixação da estrutura da caixa e caixas de gaveta'
         });
 
-        // Parafuso 3.5x16mm (Para dobradiças, corrediças e fundos)
         const hardwareScrews = (drawerCount * 12) + (doorCount * 8) + 24;
         list.push({
             item: 'Parafuso Chipboard 3,5x16mm',
@@ -142,7 +134,6 @@ export class HardwareListEngine {
             details: 'Fixação de corrediças, dobradiças, rebaixos e cantoneiras'
         });
 
-        // Cantoneiras de Fixação / Suporte de Parede para Aéreos
         if (type === 'WALL_CABINET') {
             list.push({
                 item: 'Suporte Suspenso Oculto / Cantoneira 2 Furos com Capa',
@@ -152,7 +143,6 @@ export class HardwareListEngine {
             });
         }
 
-        // Sapatas niveladoras para módulos com rodapé
         if (plinthHeight > 0 && type !== 'WALL_CABINET') {
             list.push({
                 item: 'Sapata Niveladora Plástica L com Parafuso',
@@ -175,16 +165,13 @@ export class HardwareListEngine {
      */
     _estimateDoorCount(type, width, drawerCount) {
         if (drawerCount > 0 && width <= 600) {
-            // Balcão estreito apenas de gavetas
             return 0;
         }
 
         if (drawerCount > 0 && width > 600) {
-            // Módulo misto (Ex: Gaveteiro + Porta)
             return 1;
         }
 
-        // Se não possui gavetas:
         if (width <= 500) {
             return 1;
         } else {
