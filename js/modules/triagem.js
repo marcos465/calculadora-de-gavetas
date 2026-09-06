@@ -1,20 +1,22 @@
 /**
- * @fileoverview Módulo de Interface e Formulário de Triagem para configuração do móvel.
+ * @fileoverview Interface de triagem e captação de parâmetros do móvel.
  * @module modules/triagem
  */
 
+import { SIDE_CONSTRUCTION_TYPES, SIDE_CONSTRUCTION_LABELS } from '../config/constants.js';
+
 /**
- * Gerencia a renderização do formulário de triagem e captação de parâmetros do usuário.
+ * Gerencia o formulário interativo de configuração técnica do móvel.
  */
 export class TriagemModule {
     /**
-     * @param {HTMLElement} containerElement Contêiner DOM da triagem.
-     * @param {import('../models/FurnitureState.js').FurnitureState} furnitureState Instância do modelo de estado.
-     * @param {Function} onValidateCallback Callback disparado ao validar a triagem com sucesso.
+     * @param {HTMLElement} containerElement Contêiner do DOM onde a triagem será injetada.
+     * @param {import('../models/FurnitureState.js').FurnitureState} furnitureState Instância do estado do móvel.
+     * @param {Function} onValidateCallback Função chamada quando o formulário for validado com sucesso.
      */
     constructor(containerElement, furnitureState, onValidateCallback) {
         if (!containerElement) {
-            throw new Error('TriagemModule requer um container do DOM válido.');
+            throw new Error('TriagemModule requer um elemento contêiner válido no DOM.');
         }
         this.container = containerElement;
         this.state = furnitureState;
@@ -22,7 +24,7 @@ export class TriagemModule {
     }
 
     /**
-     * Monta o formulário de triagem e aplica os ouvintes de eventos.
+     * Inicializa a renderização e registra os ouvintes de eventos do formulário.
      */
     init() {
         this.render();
@@ -31,12 +33,12 @@ export class TriagemModule {
     }
 
     /**
-     * Renderiza os controles do formulário.
+     * Renderiza o HTML do formulário com as opções parametrizadas.
      */
     render() {
         this.container.innerHTML = `
             <div class="triagem-card">
-                <h2>Configuração do Balcão / Móvel</h2>
+                <h2>Configuração Técnica do Balcão</h2>
                 <form id="form-triagem" novalidate>
                     <div class="form-row">
                         <div class="form-group">
@@ -44,14 +46,24 @@ export class TriagemModule {
                             <select id="type" name="type" class="form-control">
                                 <option value="SINK_CABINET" ${this.state.type === 'SINK_CABINET' ? 'selected' : ''}>Balcão de Pia</option>
                                 <option value="KITCHEN_BASE" ${this.state.type === 'KITCHEN_BASE' ? 'selected' : ''}>Armário de Cozinha Base</option>
-                                <option value="WALL_CABINET" ${this.state.type === 'WALL_CABINET' ? 'selected' : ''}>Armário Aéreo</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="mdfThickness">Espessura do MDF (mm)</label>
+                            <label for="mdfThickness">Espessura MDF Caixa (mm)</label>
                             <select id="mdfThickness" name="mdfThickness" class="form-control">
                                 <option value="15" ${this.state.mdfThickness === 15 ? 'selected' : ''}>15 mm</option>
                                 <option value="18" ${this.state.mdfThickness === 18 ? 'selected' : ''}>18 mm</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="sideConstruction">Tipo de Montagem da Lateral</label>
+                            <select id="sideConstruction" name="sideConstruction" class="form-control">
+                                <option value="${SIDE_CONSTRUCTION_TYPES.OVER_BASE}" ${this.state.sideConstruction === SIDE_CONSTRUCTION_TYPES.OVER_BASE ? 'selected' : ''}>
+                                    ${SIDE_CONSTRUCTION_LABELS[SIDE_CONSTRUCTION_TYPES.OVER_BASE]}
+                                </option>
+                                <option value="${SIDE_CONSTRUCTION_TYPES.FLOOR}" ${this.state.sideConstruction === SIDE_CONSTRUCTION_TYPES.FLOOR ? 'selected' : ''}>
+                                    ${SIDE_CONSTRUCTION_LABELS[SIDE_CONSTRUCTION_TYPES.FLOOR]}
+                                </option>
                             </select>
                         </div>
                     </div>
@@ -88,7 +100,7 @@ export class TriagemModule {
 
                     <div class="form-row" id="group-layout-wrapper" style="display: none;">
                         <div class="form-group full-width">
-                            <label for="drawerLayout">Disposição e Layout Interno</label>
+                            <label for="drawerLayout">Disposição dos Vãos</label>
                             <select id="drawerLayout" name="drawerLayout" class="form-control">
                                 <option value="LEFT_DRAWERS" ${this.state.drawerLayout === 'LEFT_DRAWERS' ? 'selected' : ''}>Gavetas na Esquerda / Portas na Direita</option>
                                 <option value="RIGHT_DRAWERS" ${this.state.drawerLayout === 'RIGHT_DRAWERS' ? 'selected' : ''}>Gavetas na Direita / Portas na Esquerda</option>
@@ -99,7 +111,7 @@ export class TriagemModule {
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="plinthHeight">Altura do Rodapé (mm)</label>
+                            <label for="plinthHeight">Altura Rodapé (mm)</label>
                             <input type="number" id="plinthHeight" name="plinthHeight" class="form-control" value="${this.state.plinthHeight}" min="0" max="250" required />
                         </div>
                         <div class="form-group">
@@ -119,7 +131,7 @@ export class TriagemModule {
 
                     <div class="form-actions">
                         <button type="submit" id="btn-submit" class="btn btn-primary">
-                            🚀 Gerar Plano de Corte e Ferragens
+                            🚀 Gerar Plano de Corte Matemático
                         </button>
                     </div>
                 </form>
@@ -128,7 +140,7 @@ export class TriagemModule {
     }
 
     /**
-     * Registra escutadores para mudanças e submissão do formulário.
+     * Adiciona escutadores para alteração de layout dinâmico e submissão.
      * @private
      */
     _bindEvents() {
@@ -137,11 +149,11 @@ export class TriagemModule {
         const drawerInput = this.container.querySelector('#drawerCount');
         const doorInput = this.container.querySelector('#doorCount');
 
-        const handleLayoutChangeTrigger = () => this._updateLayoutVisibility();
+        const updateVisibility = () => this._updateLayoutVisibility();
 
-        if (widthInput) widthInput.addEventListener('input', handleLayoutChangeTrigger);
-        if (drawerInput) drawerInput.addEventListener('input', handleLayoutChangeTrigger);
-        if (doorInput) doorInput.addEventListener('input', handleLayoutChangeTrigger);
+        if (widthInput) widthInput.addEventListener('input', updateVisibility);
+        if (drawerInput) drawerInput.addEventListener('input', updateVisibility);
+        if (doorInput) doorInput.addEventListener('input', updateVisibility);
 
         if (form) {
             form.addEventListener('submit', (e) => {
@@ -152,8 +164,7 @@ export class TriagemModule {
     }
 
     /**
-     * Alterna dinamicamente a visibilidade da opção de escolha de layout das gavetas.
-     * Exibido quando a largura é superior a 800mm e há combinação simultânea de gavetas e portas.
+     * Oculta/exibe o seletor de layout de gaveta conforme as regras de negócio.
      * @private
      */
     _updateLayoutVisibility() {
@@ -169,7 +180,7 @@ export class TriagemModule {
     }
 
     /**
-     * Processa e valida os dados digitados antes de notificar o orquestrador.
+     * Valida os campos antes de transmitir o estado ao orquestrador.
      * @private
      */
     _handleSubmit() {
@@ -181,6 +192,8 @@ export class TriagemModule {
             height: Number(formData.get('height')),
             depth: Number(formData.get('depth')),
             mdfThickness: Number(formData.get('mdfThickness')),
+            drawerMdfThickness: Number(formData.get('mdfThickness')), // Alinhado por padrão com a caixa
+            sideConstruction: formData.get('sideConstruction'),
             plinthHeight: Number(formData.get('plinthHeight')),
             drawerCount: Number(formData.get('drawerCount')),
             doorCount: Number(formData.get('doorCount')),
