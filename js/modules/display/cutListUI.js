@@ -1,7 +1,7 @@
 /**
  * @fileoverview Componente de Interface de Usuário (UI) responsável por renderizar 
- * a Lista de Corte de Marcenaria, Ferragens e integrar os controles de exportação CSV.
- * Compatível com execução client-side em navegadores modernos (GitHub Pages).
+ * a Lista de Corte de Marcenaria, Lista de Ferragens e a toolbar de exportação para o CutList Optimizer.
+ * Desenvolvido em Vanilla JS ES6 nativo, otimizado para navegadores e hospedagem no GitHub Pages.
  * 
  * @module modules/display/cutListUI
  */
@@ -9,66 +9,85 @@
 import { exportToCutListCSV } from '../../utils/csvExporter.js';
 
 /**
- * Encapsula a lógica de apresentação e renderização do plano de corte no DOM.
+ * Encapsula a lógica de apresentação e renderização do plano de corte e ferragens no DOM.
  */
 export class CutListUI {
     /**
-     * @param {string} [containerId='resultContainer'] - ID do elemento contêiner HTML principal.
+     * Inicializa o componente CutListUI vinculando o contêiner de exibição.
+     * @param {string|HTMLElement} [containerId='resultContainer'] - ID do elemento HTML ou referência direta ao nó DOM.
      */
     constructor(containerId = 'resultContainer') {
         /**
-         * Referência ao contêiner HTML onde a tabela e as ações serão injetadas.
+         * Referência ao nó DOM do contêiner onde a UI será renderizada.
          * @type {HTMLElement|null}
          */
-        this.container = document.getElementById(containerId);
+        this.container = typeof containerId === 'string' 
+            ? document.getElementById(containerId) 
+            : containerId;
 
         /**
-         * Armazena localmente a lista de peças calculada para reuso nos eventos de exportação.
+         * Estado em memória da lista de corte mais recente para suporte à exportação CSV.
          * @type {Array<Object>}
          */
         this.currentCuttingList = [];
 
-        if (!this.container) {
+        /**
+         * Referência para o callback de edição de formulário / nova triagem.
+         * @type {Function|null}
+         */
+        this.onEditCallback = null;
+
+        if (!this.container && typeof containerId === 'string') {
             console.warn(`[CutListUI] Contêiner com ID '${containerId}' não foi localizado no DOM inicial.`);
         }
     }
 
     /**
-     * Renderiza o painel completo contendo a lista de corte, ferragens e o botão de exportação.
+     * Renderiza o painel completo contendo o cabeçalho, ações, tabela de corte e tabela de ferragens.
      *
-     * @param {Object} data - Objeto contendo os dados processados do móvel.
-     * @param {Array<Object>} data.cuttingList - Lista das peças de corte calculadas.
-     * @param {Array<Object>} [data.hardwareList=[]] - Lista das ferragens e insumos.
-     * @param {Object} [data.state=null] - Instância de dados com os parâmetros do móvel.
+     * @param {Object} data - Objeto contendo as listas calculadas e estado do projeto.
+     * @param {Array<Object>} [data.cuttingList=[]] - Lista das peças de corte calculadas.
+     * @param {Array<Object>} [data.hardwareList=[]] - Lista das ferragens e insumos necessários.
+     * @param {Object|null} [data.state=null] - Dados dimensionais e especificações do móvel.
+     * @param {Function|null} [onEditCallback=null] - Callback disparado ao clicar no botão de editar triagem.
      * @returns {void}
      */
-    render({ cuttingList = [], hardwareList = [], state = null }) {
+    render({ cuttingList = [], hardwareList = [], state = null } = {}, onEditCallback = null) {
+        // Garantia de reconexão ao contêiner caso o nó não estivesse disponível na instanciação
         if (!this.container) {
             this.container = document.getElementById('resultContainer');
             if (!this.container) {
-                console.error('[CutListUI.render] Impossível renderizar. O contêiner "#resultContainer" não existe no DOM.');
+                console.error('[CutListUI.render] Impossível renderizar. O contêiner de resultados não existe no DOM.');
                 return;
             }
         }
 
-        // Atualiza a referência das peças em memória
+        this.onEditCallback = onEditCallback;
         this.currentCuttingList = Array.isArray(cuttingList) ? cuttingList : [];
 
+        // Validação e exibição de estado vazio se a lista de corte for inválida ou sem itens
         if (this.currentCuttingList.length === 0) {
             this.renderEmptyState();
             return;
         }
 
-        // Renderização do painel completo seguindo design Mobile-First
+        // Injeção limpa da estrutura HTML Mobile-First
         this.container.innerHTML = `
-            <section class="cutlist-panel card shadow-sm rounded-lg p-3 p-md-4 my-4" aria-label="Plano de Corte e Acessórios">
-                <header class="cutlist-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+            <section class="cutlist-panel card shadow-sm rounded-lg p-3 p-md-4 my-4" aria-label="Plano de Corte e Ferragens">
+                <header class="cutlist-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-3">
                     <div class="header-info">
                         <h2 class="h4 font-weight-bold text-dark m-0">Plano de Corte - Balcão de Pia</h2>
-                        ${state ? `<p class="text-muted small m-0 mt-1">Dimensões Totais: ${state.width}mm (L) x ${state.height}mm (A) x ${state.depth}mm (P) | MDF ${state.mdfThickness}mm</p>` : ''}
+                        ${state ? `
+                            <p class="text-muted small m-0 mt-1">
+                                Dimensões: <strong>${state.width || 0}mm</strong> (L) x <strong>${state.height || 0}mm</strong> (A) x <strong>${state.depth || 0}mm</strong> (P) | MDF: <strong>${state.mdfThickness || 15}mm</strong>
+                            </p>
+                        ` : ''}
                     </div>
-                    <div class="action-toolbar w-100 w-md-auto mt-2 mt-md-0">
-                        <button id="btnExportCSV" type="button" class="btn-primary w-100 w-md-auto d-inline-flex align-items-center justify-content-center gap-2 py-2 px-3 fw-bold">
+                    <div class="action-toolbar w-100 w-md-auto d-flex flex-column flex-sm-row gap-2">
+                        <button id="btnEditTriage" type="button" class="btn btn-outline-secondary w-100 w-sm-auto d-inline-flex align-items-center justify-content-center gap-2 py-2 px-3 fw-semibold">
+                            ✏️ Editar Triagem
+                        </button>
+                        <button id="btnExportCSV" type="button" class="btn btn-primary w-100 w-sm-auto d-inline-flex align-items-center justify-content-center gap-2 py-2 px-3 fw-bold">
                             📥 Baixar para CutList Optimizer (.CSV)
                         </button>
                     </div>
@@ -96,16 +115,16 @@ export class CutListUI {
             </section>
         `;
 
-        // Atribui os ouvintes de eventos logo após a injeção do HTML no DOM
+        // Registro imediato dos escutadores de eventos no DOM recém-criado
         this.attachEventListeners();
     }
 
     /**
-     * Gera a marcação HTML para as linhas da tabela de corte.
+     * Gera as linhas HTML da tabela da lista de corte com higienização e tratamento de dimensões.
      *
      * @private
-     * @param {Array<Object>} items - Array de objetos representando as peças.
-     * @returns {string} String HTML formatada.
+     * @param {Array<Object>} items - Array de peças da lista de corte.
+     * @returns {string} String HTML formatada com as tr/td da tabela.
      */
     generateCuttingRowsHTML(items) {
         return items.map((item) => {
@@ -113,44 +132,58 @@ export class CutListUI {
             const lengthNum = Number(rawLength) || 0;
             const widthNum = Number(item.width) || 0;
 
+            // Orientação de corte: Comprimento deve ser a maior dimensão para o CutList Optimizer
             const lengthDisplay = Math.max(lengthNum, widthNum).toFixed(1);
             const widthDisplay = Math.min(lengthNum, widthNum).toFixed(1);
+
+            const quantity = Number(item.quantity || item.qty || 1);
+            const thickness = item.thickness || 15;
+            const name = this.escapeHTML(item.name || item.label || 'Peça sem nome');
+            const description = item.description ? this.escapeHTML(item.description) : '';
+            const edgeBanding = this.escapeHTML(item.edgeBanding || 'Sem Fita');
 
             return `
                 <tr>
                     <td class="py-2 px-3">
-                        <strong class="d-block text-dark">${this.escapeHTML(item.name || item.label || 'Peça sem nome')}</strong>
-                        ${item.description ? `<small class="text-muted d-block fs-7">${this.escapeHTML(item.description)}</small>` : ''}
+                        <strong class="d-block text-dark">${name}</strong>
+                        ${description ? `<small class="text-muted d-block fs-7">${description}</small>` : ''}
                     </td>
-                    <td class="text-center py-2 px-3 fw-bold">${item.quantity || item.qty || 1}</td>
+                    <td class="text-center py-2 px-3 fw-bold">${quantity}</td>
                     <td class="text-end py-2 px-3 font-monospace fw-semibold">${lengthDisplay}</td>
                     <td class="text-end py-2 px-3 font-monospace fw-semibold">${widthDisplay}</td>
-                    <td class="text-center py-2 px-3"><span class="badge bg-secondary">${item.thickness || 15}mm</span></td>
-                    <td class="text-center py-2 px-3"><span class="badge bg-light text-dark border">${this.escapeHTML(item.edgeBanding || 'Sem Fita')}</span></td>
+                    <td class="text-center py-2 px-3"><span class="badge bg-secondary">${thickness}mm</span></td>
+                    <td class="text-center py-2 px-3"><span class="badge bg-light text-dark border">${edgeBanding}</span></td>
                 </tr>
             `;
         }).join('');
     }
 
     /**
-     * Gera o bloco de exibição para a lista de ferragens e insumos complementares.
+     * Gera a seção e tabela HTML para exibição das ferragens e insumos.
      *
      * @private
-     * @param {Array<Object>} hardwareList - Itens de ferragens.
-     * @returns {string} String HTML contendo a seção de ferragens ou string vazia.
+     * @param {Array<Object>} hardwareList - Lista das ferragens calculadas.
+     * @returns {string} String HTML contendo o bloco visual de ferragens.
      */
     generateHardwareSectionHTML(hardwareList) {
         if (!Array.isArray(hardwareList) || hardwareList.length === 0) {
             return '';
         }
 
-        const rows = hardwareList.map((item) => `
-            <tr>
-                <td class="py-2 px-3 fw-semibold text-dark">${this.escapeHTML(item.name)}</td>
-                <td class="text-center py-2 px-3 font-monospace fw-bold">${item.quantity} ${this.escapeHTML(item.unit || 'un')}</td>
-                <td class="py-2 px-3 text-muted small">${this.escapeHTML(item.description || '-')}</td>
-            </tr>
-        `).join('');
+        const rows = hardwareList.map((item) => {
+            const name = this.escapeHTML(item.name || 'Item de Ferragem');
+            const quantity = item.quantity || 1;
+            const unit = this.escapeHTML(item.unit || 'un');
+            const description = this.escapeHTML(item.description || '-');
+
+            return `
+                <tr>
+                    <td class="py-2 px-3 fw-semibold text-dark">${name}</td>
+                    <td class="text-center py-2 px-3 font-monospace fw-bold">${quantity} ${unit}</td>
+                    <td class="py-2 px-3 text-muted small">${description}</td>
+                </tr>
+            `;
+        }).join('');
 
         return `
             <div class="hardware-panel mt-4 pt-3 border-top">
@@ -174,7 +207,7 @@ export class CutListUI {
     }
 
     /**
-     * Exibe um estado amigável quando não houver peças calculadas para exibição.
+     * Renderiza uma mensagem visual para estado de dados ausentes ou lista vazia.
      *
      * @private
      * @returns {void}
@@ -188,33 +221,45 @@ export class CutListUI {
     }
 
     /**
-     * Conecta o ouvinte de evento de clique ao botão de exportação CSV.
+     * Atribui os ouvintes de evento nos botões interativos injetados no DOM.
      *
      * @private
      * @returns {void}
      */
     attachEventListeners() {
+        // Evento do botão de exportação CSV
         const btnExport = this.container.querySelector('#btnExportCSV');
-
         if (btnExport) {
             btnExport.addEventListener('click', (event) => {
                 event.preventDefault();
-
-                // Dispara a exportação utilizando a função importada do módulo csvExporter.js
                 exportToCutListCSV(this.currentCuttingList, 'corte_balcao_cutlist.csv');
+            });
+        }
+
+        // Evento do botão de editar / nova triagem
+        const btnEdit = this.container.querySelector('#btnEditTriage');
+        if (btnEdit) {
+            btnEdit.addEventListener('click', (event) => {
+                event.preventDefault();
+                if (typeof this.onEditCallback === 'function') {
+                    this.onEditCallback();
+                }
             });
         }
     }
 
     /**
-     * Método utilitário de segurança para prevenção de vulnerabilidades Cross-Site Scripting (XSS).
+     * Higieniza textos de entrada convertendo caracteres especiais em entidades HTML
+     * para mitigar ataques de Cross-Site Scripting (XSS).
      *
      * @private
-     * @param {string} str - Texto de entrada.
-     * @returns {string} String com entidades HTML devidamente escapadas.
+     * @param {string} str - String não confiável.
+     * @returns {string} String sanitizada e segura para injeção via Template String.
      */
     escapeHTML(str) {
-        if (typeof str !== 'string') return '';
+        if (typeof str !== 'string') {
+            return '';
+        }
         return str
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
