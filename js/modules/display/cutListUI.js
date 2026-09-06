@@ -1,7 +1,7 @@
 /**
  * @fileoverview Componente de Interface de Usuário (UI) responsável por renderizar 
- * a Lista de Corte de Marcenaria, Lista de Ferragens e a toolbar de exportação para o CutList Optimizer.
- * Desenvolvido em Vanilla JS ES6 nativo, otimizado para navegadores e hospedagem no GitHub Pages.
+ * a Lista de Corte de Marcenaria, Tabela de Ferragens e Controles de Ação (Edição e Exportação CSV).
+ * Executado 100% no lado do cliente (Client-side) em ecossistema ES6 Modules nativo.
  * 
  * @module modules/display/cutListUI
  */
@@ -9,83 +9,87 @@
 import { exportToCutListCSV } from '../../utils/csvExporter.js';
 
 /**
- * Encapsula a lógica de apresentação e renderização do plano de corte e ferragens no DOM.
+ * Classe responsável pelo gerenciamento do DOM e renderização do plano de corte.
  */
 export class CutListUI {
     /**
-     * Inicializa o componente CutListUI vinculando o contêiner de exibição.
-     * @param {string|HTMLElement} [containerId='resultContainer'] - ID do elemento HTML ou referência direta ao nó DOM.
+     * Inicializa a instância da UI configurando o elemento contêiner de exibição.
+     * @param {string|HTMLElement} [containerId='resultContainer'] - ID do elemento HTML ou nó DOM direto.
      */
     constructor(containerId = 'resultContainer') {
         /**
-         * Referência ao nó DOM do contêiner onde a UI será renderizada.
+         * Referência ao elemento contêiner no DOM.
          * @type {HTMLElement|null}
          */
-        this.container = typeof containerId === 'string' 
-            ? document.getElementById(containerId) 
+        this.container = typeof containerId === 'string'
+            ? document.getElementById(containerId)
             : containerId;
 
         /**
-         * Estado em memória da lista de corte mais recente para suporte à exportação CSV.
+         * Armazena localmente a lista de corte atual em memória para exportação CSV.
          * @type {Array<Object>}
          */
         this.currentCuttingList = [];
 
         /**
-         * Referência para o callback de edição de formulário / nova triagem.
+         * Callback de ação para botão de edição do projeto.
          * @type {Function|null}
          */
         this.onEditCallback = null;
 
         if (!this.container && typeof containerId === 'string') {
-            console.warn(`[CutListUI] Contêiner com ID '${containerId}' não foi localizado no DOM inicial.`);
+            console.warn(`[CutListUI] Contêiner inicial com ID '${containerId}' não foi localizado no DOM.`);
         }
     }
 
     /**
-     * Renderiza o painel completo contendo o cabeçalho, ações, tabela de corte e tabela de ferragens.
+     * Renderiza o painel completo contendo o cabeçalho, ações, tabela de corte e ferragens.
      *
-     * @param {Object} data - Objeto contendo as listas calculadas e estado do projeto.
-     * @param {Array<Object>} [data.cuttingList=[]] - Lista das peças de corte calculadas.
-     * @param {Array<Object>} [data.hardwareList=[]] - Lista das ferragens e insumos necessários.
-     * @param {Object|null} [data.state=null] - Dados dimensionais e especificações do móvel.
-     * @param {Function|null} [onEditCallback=null] - Callback disparado ao clicar no botão de editar triagem.
+     * @param {Object} data - Estrutura de dados contendo o plano de corte e ferragens.
+     * @param {Array<Object>} [data.cuttingList=[]] - Lista das peças calculadas.
+     * @param {Array<Object>} [data.hardwareList=[]] - Lista de ferragens e insumos.
+     * @param {Object|null} [data.state=null] - Estado com os parâmetros dimensionais do móvel.
+     * @param {Function|null} [onEditCallback=null] - Função callback para retorno à triagem/edição.
      * @returns {void}
      */
     render({ cuttingList = [], hardwareList = [], state = null } = {}, onEditCallback = null) {
-        // Garantia de reconexão ao contêiner caso o nó não estivesse disponível na instanciação
+        // Reconecta ao contêiner caso ele não estivesse pronto no construtor
         if (!this.container) {
             this.container = document.getElementById('resultContainer');
             if (!this.container) {
-                console.error('[CutListUI.render] Impossível renderizar. O contêiner de resultados não existe no DOM.');
+                console.error('[CutListUI.render] Erro fatal: Contêiner "#resultContainer" não foi encontrado no DOM.');
                 return;
             }
         }
 
-        this.onEditCallback = onEditCallback;
         this.currentCuttingList = Array.isArray(cuttingList) ? cuttingList : [];
+        this.onEditCallback = typeof onEditCallback === 'function' ? onEditCallback : null;
 
-        // Validação e exibição de estado vazio se a lista de corte for inválida ou sem itens
+        // Trata o estado vazio do plano de corte
         if (this.currentCuttingList.length === 0) {
             this.renderEmptyState();
             return;
         }
 
-        // Injeção limpa da estrutura HTML Mobile-First
+        // Extração segura das dimensões para exibição no cabeçalho
+        const widthVal = state?.width || 0;
+        const heightVal = state?.height || 0;
+        const depthVal = state?.depth || 0;
+        const mdfVal = state?.mdfThickness || 15;
+
+        // Injeção limpa da estrutura no HTML do contêiner
         this.container.innerHTML = `
             <section class="cutlist-panel card shadow-sm rounded-lg p-3 p-md-4 my-4" aria-label="Plano de Corte e Ferragens">
                 <header class="cutlist-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-3">
                     <div class="header-info">
                         <h2 class="h4 font-weight-bold text-dark m-0">Plano de Corte - Balcão de Pia</h2>
-                        ${state ? `
-                            <p class="text-muted small m-0 mt-1">
-                                Dimensões: <strong>${state.width || 0}mm</strong> (L) x <strong>${state.height || 0}mm</strong> (A) x <strong>${state.depth || 0}mm</strong> (P) | MDF: <strong>${state.mdfThickness || 15}mm</strong>
-                            </p>
-                        ` : ''}
+                        <p class="text-muted small m-0 mt-1">
+                            Dimensões Totais: <strong>${widthVal}mm</strong> (L) x <strong>${heightVal}mm</strong> (A) x <strong>${depthVal}mm</strong> (P) | MDF: <strong>${mdfVal}mm</strong>
+                        </p>
                     </div>
                     <div class="action-toolbar w-100 w-md-auto d-flex flex-column flex-sm-row gap-2">
-                        <button id="btnEditTriage" type="button" class="btn btn-outline-secondary w-100 w-sm-auto d-inline-flex align-items-center justify-content-center gap-2 py-2 px-3 fw-semibold">
-                            ✏️ Editar Triagem
+                        <button id="btn-edit-project" type="button" class="btn btn-outline-secondary w-100 w-sm-auto d-inline-flex align-items-center justify-content-center gap-2 py-2 px-3 fw-semibold">
+                            ✏️ Editar / Nova Triagem
                         </button>
                         <button id="btnExportCSV" type="button" class="btn btn-primary w-100 w-sm-auto d-inline-flex align-items-center justify-content-center gap-2 py-2 px-3 fw-bold">
                             📥 Baixar para CutList Optimizer (.CSV)
@@ -106,7 +110,7 @@ export class CutListUI {
                             </tr>
                         </thead>
                         <tbody>
-                            ${this.generateCuttingRowsHTML(this.currentCuttingList)}
+                            ${this.generateCuttingRowsHTML(this.currentCuttingList, state)}
                         </tbody>
                     </table>
                 </div>
@@ -115,29 +119,35 @@ export class CutListUI {
             </section>
         `;
 
-        // Registro imediato dos escutadores de eventos no DOM recém-criado
-        this.attachEventListeners();
+        // Atribuição de ouvintes de eventos
+        this.attachEventListeners(this.onEditCallback);
     }
 
     /**
-     * Gera as linhas HTML da tabela da lista de corte com higienização e tratamento de dimensões.
+     * Gera as linhas HTML para a tabela da lista de corte tratando resiliência de dados para evitar NaN.
      *
      * @private
      * @param {Array<Object>} items - Array de peças da lista de corte.
-     * @returns {string} String HTML formatada com as tr/td da tabela.
+     * @param {Object|null} state - Estado global da aplicação para fallback de espessura.
+     * @returns {string} String com o HTML formatado das linhas (<tr>).
      */
-    generateCuttingRowsHTML(items) {
+    generateCuttingRowsHTML(items, state = null) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return `<tr><td colspan="6" class="text-center py-3 text-muted">Nenhuma peça listada.</td></tr>`;
+        }
+
         return items.map((item) => {
-            const rawLength = item.length !== undefined ? item.length : item.height;
-            const lengthNum = Number(rawLength) || 0;
-            const widthNum = Number(item.width) || 0;
-
-            // Orientação de corte: Comprimento deve ser a maior dimensão para o CutList Optimizer
-            const lengthDisplay = Math.max(lengthNum, widthNum).toFixed(1);
-            const widthDisplay = Math.min(lengthNum, widthNum).toFixed(1);
-
+            // Leitura resiliente dos valores numéricos com fallbacks
+            const rawLength = Number(item.length || item.height || 0);
+            const rawWidth = Number(item.width || 0);
             const quantity = Number(item.quantity || item.qty || 1);
-            const thickness = item.thickness || 15;
+            const thickness = Number(item.thickness || state?.mdfThickness || 15);
+
+            // Regra do CutList Optimizer: Comprimento >= Largura
+            const lengthDisplay = Math.max(rawLength, rawWidth).toFixed(1);
+            const widthDisplay = Math.min(rawLength, rawWidth).toFixed(1);
+
+            // Tratamento das propriedades de texto
             const name = this.escapeHTML(item.name || item.label || 'Peça sem nome');
             const description = item.description ? this.escapeHTML(item.description) : '';
             const edgeBanding = this.escapeHTML(item.edgeBanding || 'Sem Fita');
@@ -159,11 +169,11 @@ export class CutListUI {
     }
 
     /**
-     * Gera a seção e tabela HTML para exibição das ferragens e insumos.
+     * Gera o bloco de exibição e a tabela HTML de ferragens e insumos.
      *
      * @private
-     * @param {Array<Object>} hardwareList - Lista das ferragens calculadas.
-     * @returns {string} String HTML contendo o bloco visual de ferragens.
+     * @param {Array<Object>} hardwareList - Array com os itens de ferragens.
+     * @returns {string} String HTML contendo a seção de ferragens.
      */
     generateHardwareSectionHTML(hardwareList) {
         if (!Array.isArray(hardwareList) || hardwareList.length === 0) {
@@ -172,7 +182,7 @@ export class CutListUI {
 
         const rows = hardwareList.map((item) => {
             const name = this.escapeHTML(item.name || 'Item de Ferragem');
-            const quantity = item.quantity || 1;
+            const quantity = Number(item.quantity || item.qty || 1);
             const unit = this.escapeHTML(item.unit || 'un');
             const description = this.escapeHTML(item.description || '-');
 
@@ -207,7 +217,7 @@ export class CutListUI {
     }
 
     /**
-     * Renderiza uma mensagem visual para estado de dados ausentes ou lista vazia.
+     * Renderiza o estado padrão para quando não houver cálculos disponíveis.
      *
      * @private
      * @returns {void}
@@ -221,13 +231,14 @@ export class CutListUI {
     }
 
     /**
-     * Atribui os ouvintes de evento nos botões interativos injetados no DOM.
+     * Vincula os eventos de clique aos botões do painel renderizado no DOM.
      *
      * @private
+     * @param {Function|null} onEditCallback - Função de callback opcional para o botão de editar.
      * @returns {void}
      */
-    attachEventListeners() {
-        // Evento do botão de exportação CSV
+    attachEventListeners(onEditCallback = null) {
+        // Evento para Exportação CSV do CutList Optimizer
         const btnExport = this.container.querySelector('#btnExportCSV');
         if (btnExport) {
             btnExport.addEventListener('click', (event) => {
@@ -236,25 +247,25 @@ export class CutListUI {
             });
         }
 
-        // Evento do botão de editar / nova triagem
-        const btnEdit = this.container.querySelector('#btnEditTriage');
+        // Evento para Editar / Nova Triagem
+        const btnEdit = this.container.querySelector('#btn-edit-project');
         if (btnEdit) {
             btnEdit.addEventListener('click', (event) => {
                 event.preventDefault();
-                if (typeof this.onEditCallback === 'function') {
-                    this.onEditCallback();
+                if (typeof onEditCallback === 'function') {
+                    onEditCallback();
                 }
             });
         }
     }
 
     /**
-     * Higieniza textos de entrada convertendo caracteres especiais em entidades HTML
-     * para mitigar ataques de Cross-Site Scripting (XSS).
+     * Sanitiza textos convertendo caracteres especiais em entidades HTML
+     * para prevenir falhas de segurança do tipo Cross-Site Scripting (XSS).
      *
      * @private
-     * @param {string} str - String não confiável.
-     * @returns {string} String sanitizada e segura para injeção via Template String.
+     * @param {string} str - Texto não confiável.
+     * @returns {string} Texto sanitizado.
      */
     escapeHTML(str) {
         if (typeof str !== 'string') {
