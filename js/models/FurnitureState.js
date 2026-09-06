@@ -1,95 +1,88 @@
 /**
- * @fileoverview Gerenciador do estado do móvel em cálculo.
+ * @fileoverview Modelo de estado representativo do móvel e suas configurações estruturais.
  * @module models/FurnitureState
  */
 
-import {
-    MODULE_TYPES,
-    MDF_THICKNESS,
-    PLINTH_DEFAULT_HEIGHT,
-    FINISH_TYPES
-} from '../config/constants.js';
+/**
+ * Define o layout estrutural quando há divisão de vãos (ex: Gavetas + Portas).
+ * @typedef {'LEFT_DRAWERS' | 'RIGHT_DRAWERS' | 'FULL_WIDTH'} DrawerLayout
+ */
 
 /**
- * Representa as configurações e dimensões do móvel a ser calculado.
+ * Classe de modelo para armazenar, validar e exportar o estado de configuração do móvel.
  */
 export class FurnitureState {
-    /**
-     * @param {Object} [initialData={}] Dados iniciais para preenchimento do estado.
-     */
-    constructor(initialData = {}) {
-        this.type = initialData.type || MODULE_TYPES[0].id;
-        this.height = Number(initialData.height) || 0;
-        this.width = Number(initialData.width) || 0;
-        this.depth = Number(initialData.depth) || 0;
-        this.mdfThickness = Number(initialData.mdfThickness) || MDF_THICKNESS[0];
-        this.plinthHeight = Number(initialData.plinthHeight) ?? PLINTH_DEFAULT_HEIGHT;
-        this.drawerCount = Number(initialData.drawerCount) || 0;
-        this.finishType = initialData.finishType || FINISH_TYPES[0].id;
-        this.hasProfileHandle = Boolean(initialData.hasProfileHandle);
+    constructor() {
+        this.type = 'SINK_CABINET';
+        this.width = 1200;            // Largura total em mm
+        this.height = 870;            // Altura total em mm (incluindo rodapé)
+        this.depth = 550;             // Profundidade total em mm
+        this.mdfThickness = 15;       // Espessura do MDF/MDP em mm
+        this.plinthHeight = 150;      // Altura do rodapé em mm
+        this.drawerCount = 3;         // Quantidade de gavetas
+        this.doorCount = 2;           // Quantidade de portas
+        this.shelfCount = 1;          // Quantidade de prateleiras internas
+        this.hasProfileHandle = true;  // Utiliza perfil de alumínio/gola
+        this.finishType = 'Branco';   // Cor/Acabamento
+        /** @type {DrawerLayout} */
+        this.drawerLayout = 'LEFT_DRAWERS'; // Disposição das gavetas se houver divisão
     }
 
     /**
-     * Atualiza os dados do estado com base em um objeto parcial de novos valores.
-     * @param {Object} newData Parâmetros a serem atualizados.
-     * @returns {FurnitureState} A própria instância para encadeamento.
+     * Atualiza o estado a partir de um objeto de dados parciais ou completos.
+     * @param {Partial<FurnitureState>} data Dados para fusão no estado.
      */
-    update(newData = {}) {
-        if (newData.type !== undefined) this.type = String(newData.type);
-        if (newData.height !== undefined) this.height = Number(newData.height);
-        if (newData.width !== undefined) this.width = Number(newData.width);
-        if (newData.depth !== undefined) this.depth = Number(newData.depth);
-        if (newData.mdfThickness !== undefined) this.mdfThickness = Number(newData.mdfThickness);
-        if (newData.plinthHeight !== undefined) this.plinthHeight = Number(newData.plinthHeight);
-        if (newData.drawerCount !== undefined) this.drawerCount = Number(newData.drawerCount);
-        if (newData.finishType !== undefined) this.finishType = String(newData.finishType);
-        if (newData.hasProfileHandle !== undefined) this.hasProfileHandle = Boolean(newData.hasProfileHandle);
+    update(data) {
+        if (!data || typeof data !== 'object') return;
 
-        return this;
+        if (data.type !== undefined) this.type = String(data.type);
+        if (data.width !== undefined) this.width = Number(data.width);
+        if (data.height !== undefined) this.height = Number(data.height);
+        if (data.depth !== undefined) this.depth = Number(data.depth);
+        if (data.mdfThickness !== undefined) this.mdfThickness = Number(data.mdfThickness);
+        if (data.plinthHeight !== undefined) this.plinthHeight = Number(data.plinthHeight);
+        if (data.drawerCount !== undefined) this.drawerCount = Number(data.drawerCount);
+        if (data.doorCount !== undefined) this.doorCount = Number(data.doorCount);
+        if (data.shelfCount !== undefined) this.shelfCount = Number(data.shelfCount);
+        if (data.hasProfileHandle !== undefined) this.hasProfileHandle = Boolean(data.hasProfileHandle);
+        if (data.finishType !== undefined) this.finishType = String(data.finishType);
+        if (data.drawerLayout !== undefined) this.drawerLayout = String(data.drawerLayout);
     }
 
     /**
-     * Valida se as dimensões mínimas e campos obrigatórios foram preenchidos corretamente.
-     * @returns {{isValid: boolean, errors: string[]}} Status de validação e lista de erros encontrados.
+     * Valida os parâmetros de dimensão e regras mínimas de construção.
+     * @returns {{isValid: boolean, errors: string[]}}
      */
     validate() {
         const errors = [];
 
-        if (!MODULE_TYPES.some((m) => m.id === this.type)) {
-            errors.push('Selecione um tipo de móvel válido.');
+        if (isNaN(this.width) || this.width < 300 || this.width > 2700) {
+            errors.push('A largura deve estar entre 300mm e 2700mm.');
         }
 
-        if (isNaN(this.height) || this.height < 200) {
-            errors.push('A altura mínima recomendada do móvel é 200mm.');
+        if (isNaN(this.height) || this.height < 400 || this.height > 2600) {
+            errors.push('A altura deve estar entre 400mm e 2600mm.');
         }
 
-        if (isNaN(this.width) || this.width < 200) {
-            errors.push('A largura mínima recomendada do móvel é 200mm.');
+        if (isNaN(this.depth) || this.depth < 250 || this.depth > 1000) {
+            errors.push('A profundidade deve estar entre 250mm e 1000mm.');
         }
 
-        if (isNaN(this.depth) || this.depth < 100) {
-            errors.push('A profundidade mínima recomendada do móvel é 100mm.');
+        if (isNaN(this.doorCount) || this.doorCount < 0 || this.doorCount > 4) {
+            errors.push('A quantidade de portas deve ser entre 0 e 4.');
         }
 
-        if (!MDF_THICKNESS.includes(this.mdfThickness)) {
-            errors.push('Selecione uma espessura de MDF válida (15mm ou 18mm).');
+        if (isNaN(this.shelfCount) || this.shelfCount < 0 || this.shelfCount > 3) {
+            errors.push('A quantidade de prateleiras deve ser entre 0 e 3.');
         }
 
-        if (isNaN(this.plinthHeight) || this.plinthHeight < 0) {
-            errors.push('A altura do rodapé não pode ser negativa.');
+        if (isNaN(this.drawerCount) || this.drawerCount < 0 || this.drawerCount > 8) {
+            errors.push('A quantidade de gavetas deve ser entre 0 e 8.');
         }
 
-        if (this.type === 'WALL_CABINET' && this.plinthHeight > 0) {
-            // Em aéreos não costuma existir rodapé
-            this.plinthHeight = 0;
-        }
-
-        if (isNaN(this.drawerCount) || this.drawerCount < 0) {
-            errors.push('A quantidade de gavetas deve ser igual ou maior a zero.');
-        }
-
-        if (!FINISH_TYPES.some((f) => f.id === this.finishType)) {
-            errors.push('Selecione um tipo de acabamento válido.');
+        // Validação estrutural de coerência
+        if (this.width > 800 && this.drawerCount > 0 && this.doorCount === 0 && this.drawerLayout !== 'FULL_WIDTH') {
+            errors.push('Para móveis sem portas, selecione o layout "Apenas Gavetas / Apenas Portas".');
         }
 
         return {
@@ -99,20 +92,23 @@ export class FurnitureState {
     }
 
     /**
-     * Retorna uma cópia limpa do estado (Plain Old JavaScript Object).
-     * @returns {Object} Dados do estado.
+     * Retorna uma cópia serializável limpa do estado atual.
+     * @returns {Object}
      */
     toObject() {
         return {
             type: this.type,
-            height: this.height,
             width: this.width,
+            height: this.height,
             depth: this.depth,
             mdfThickness: this.mdfThickness,
             plinthHeight: this.plinthHeight,
             drawerCount: this.drawerCount,
+            doorCount: this.doorCount,
+            shelfCount: this.shelfCount,
+            hasProfileHandle: this.hasProfileHandle,
             finishType: this.finishType,
-            hasProfileHandle: this.hasProfileHandle
+            drawerLayout: this.drawerLayout
         };
     }
 }
