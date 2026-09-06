@@ -1,34 +1,32 @@
 /**
- * @fileoverview Engine de cálculo de plano de corte e regras geométricas para marcenaria.
+ * @fileoverview Engine de cálculo preciso do plano de corte e modulação de componentes de marcenaria.
  * @module modules/engine/cuttingList
  */
 
-import {
-    BACK_PANEL,
-    EDGE_BANDING_DISCOUNT_PER_EDGE,
-    SHELF_RECESS,
-    SLIDE_CLEARANCE
-} from '../../config/constants.js';
-
 /**
- * Representa um item gerado no plano de corte.
+ * Objeto representando uma peça individual da lista de corte.
  * @typedef {Object} CuttingItem
- * @property {string} name - Nome ou identificação da peça.
- * @property {number} quantity - Quantidade de peças idênticas.
- * @property {number} width - Largura da peça em milímetros (sentido do corte).
- * @property {number} height - Comprimento/Altura da peça em milímetros (sentido do veio do mdf/corte).
- * @property {number} thickness - Espessura do MDF utilizado na peça em milímetros.
- * @property {string} edgeBanding - Instruções de fitamento de borda (ex: "2L 2A", "1L 2A").
- * @property {string} description - Descrição detalhada do papel estrutural da peça.
+ * @property {string} name - Nome técnico da peça.
+ * @property {number} quantity - Quantidade de peças.
+ * @property {number} height - Comprimento (medida maior ou no sentido do veio) em mm.
+ * @property {number} width - Largura (medida menor) em mm.
+ * @property {number} thickness - Espessura do MDF em mm.
+ * @property {string} edgeBanding - Instrução de fita de borda (ex: '1L 1C', '4 Lados').
+ * @property {string} description - Descrição e detalhes de montagem.
  */
 
 /**
- * Processador matemático responsável por transformar as especificações do móvel
- * em uma lista detalhada de plano de corte para produção.
+ * Calculador e modulador técnico responsável pela geração de peças de corte.
  */
 export class CuttingListEngine {
     /**
-     * @param {import('../../models/FurnitureState.js').FurnitureState} furnitureState Instância do estado com as dimensões do móvel.
+     * Recuo padrão da prateleira e divisórias internas em relação à frente da caixa.
+     * @type {number}
+     */
+    static SHELF_RECESS = 10;
+
+    /**
+     * @param {import('../../models/FurnitureState.js').FurnitureState} furnitureState
      */
     constructor(furnitureState) {
         if (!furnitureState) {
@@ -38,339 +36,216 @@ export class CuttingListEngine {
     }
 
     /**
-     * Ponto de entrada principal para a geração do plano de corte.
-     * Delega os cálculos conforme o tipo de módulo selecionado no estado.
-     * @returns {CuttingItem[]} Lista de peças calculadas com suas dimensões finais de corte.
+     * Processa e calcula o plano de corte completo baseado no estado do móvel.
+     * @returns {CuttingItem[]} Lista estruturada de peças cortadas com descontos.
      */
     generateList() {
-        switch (this.state.type) {
-            case 'SINK_CABINET':
-                return this._calculateSinkCabinet();
-            case 'WALL_CABINET':
-                return this._calculateWallCabinet();
-            case 'KITCHEN_BASE':
-                return this._calculateKitchenBase();
-            case 'WARDROBE':
-                return this._calculateWardrobe();
-            default:
-                throw new Error(`Tipo de módulo não suportado para cálculo: ${this.state.type}`);
-        }
-    }
-
-    /**
-     * Realiza a engenharia detalhada e corte de peças para o módulo Balcão de Pia.
-     * @private
-     * @returns {CuttingItem[]} Lista de peças estruturais e frentes para o balcão de pia.
-     */
-    _calculateSinkCabinet() {
         const list = [];
         const {
-            height,
             width,
+            height,
             depth,
             mdfThickness,
             plinthHeight,
             drawerCount,
-            hasProfileHandle
+            doorCount,
+            shelfCount,
+            drawerLayout
         } = this.state;
 
         // ---------------------------------------------------------------------
-        // 1. LATERAIS (2 Peças)
-        // Fórmula:
-        // Altura útil da caixa = Altura Total - Altura do Rodapé
-        // Profundidade da peça = Profundidade Total do Móvel
+        // 1. CÁLCULO DE DIMENSÕES DA CAIXA E VÃOS INTERNOS
         // ---------------------------------------------------------------------
-        const cabinetBodyHeight = height - plinthHeight;
-        const sideHeight = cabinetBodyHeight;
-        const sideDepth = depth;
+        const cabinetHeight = height - plinthHeight;
+        const internalHeight = cabinetHeight - (2 * mdfThickness); // Altura entre a base e o tampo/riplas
+        const internalWidthTotal = width - (2 * mdfThickness);      // Vão livre total interno
+        const internalDepth = depth - CuttingListEngine.SHELF_RECESS; // Profundidade recuada para internos
 
+        // Determina se há necessidade de Divisória Vertical (Gavetas + Portas em móveis amplos)
+        const hasDivider = (drawerCount > 0 && doorCount > 0) || (width > 800 && drawerCount > 0 && drawerLayout !== 'FULL_WIDTH');
+
+        // Divisão de Vãos: Se houver divisória, desconta a espessura da divisória e divide por 2
+        let drawerBayWidth = internalWidthTotal;
+        let doorBayWidth = internalWidthTotal;
+
+        if (hasDivider) {
+            const availableSpace = internalWidthTotal - mdfThickness;
+            drawerBayWidth = Math.round(availableSpace / 2);
+            doorBayWidth = availableSpace - drawerBayWidth;
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. ESTRUTURA EXTERNA (CAIXA)
+        // ---------------------------------------------------------------------
+
+        // Laterais (2 unidades)
         list.push({
-            name: 'Lateral Esquerda / Direita',
+            name: 'Lateral Caixa',
             quantity: 2,
-            height: sideHeight,
-            width: sideDepth,
+            height: cabinetHeight,
+            width: depth,
             thickness: mdfThickness,
-            edgeBanding: '1L 2A', // Frontal fita grossa, superior/inferior fita fina
-            description: 'Laterais externas da caixa do balcão'
+            edgeBanding: '1L 1C',
+            description: 'Laterais externas da caixa'
         });
 
-        // ---------------------------------------------------------------------
-        // 2. VÃO INTERNO DA CAIXA (Cálculo Base para Peças Internas)
-        // Fórmula:
-        // Largura Interna do Vão = Largura Total - (2 * Espessura do MDF)
-        // ---------------------------------------------------------------------
-        const internalWidth = width - (2 * mdfThickness);
-
-        // ---------------------------------------------------------------------
-        // 3. BASE INFERIOR (1 Peça)
-        // Fórmula:
-        // Largura = Largura Interna do Vão
-        // Profundidade = Profundidade Total
-        // ---------------------------------------------------------------------
+        // Base Inferior (1 unidade)
         list.push({
             name: 'Base Inferior',
             quantity: 1,
-            height: internalWidth,
-            width: sideDepth,
+            height: internalWidthTotal,
+            width: depth,
             thickness: mdfThickness,
-            edgeBanding: '1L 0A',
-            description: 'Base de assentamento inferior do móvel'
+            edgeBanding: '1L',
+            description: 'Base montada entre as laterais'
         });
 
-        // ---------------------------------------------------------------------
-        // 4. SARRAFOS SUPERIORES / REFORÇOS DE PIA (2 Peças: Frontal e Traseiro)
-        // Em balcões de pia, substitui-se o teto inteiro por sarrafos horizontais
-        // para dar passagem à cuba/sifão e garantir travamento estrutural.
-        // Fórmula:
-        // Comprimento = Largura Interna do Vão
-        // Largura Padrão do Sarrafo = 80mm
-        // ---------------------------------------------------------------------
-        const plinthSartofWidth = 80;
+        // Traves / Ripas Superiores de Amarração (2 unidades)
         list.push({
-            name: 'Sarrafo Superior (Frontal/Traseiro)',
+            name: 'Ripa Superior (Fixação)',
             quantity: 2,
-            height: internalWidth,
-            width: plinthSartofWidth,
+            height: internalWidthTotal,
+            width: 80,
             thickness: mdfThickness,
-            edgeBanding: '1L 0A',
-            description: 'Régua de travamento superior da caixa para sustentação da pia'
+            edgeBanding: '1L',
+            description: 'Sustentação da pia/tampo e amarração estrutural'
         });
 
-        // ---------------------------------------------------------------------
-        // 5. RODAPÉ (Se houver rodapé configurado)
-        // Fórmula:
-        // Comprimento = Largura Interna do Vão
-        // Altura do Rodapé = plinthHeight
-        // ---------------------------------------------------------------------
+        // Fundo Traseiro (MDF 3mm ou 15mm encabeçado - Usando MDF do projeto)
+        list.push({
+            name: 'Fundo Traseiro Engrossado',
+            quantity: 1,
+            height: internalHeight - 5,
+            width: internalWidthTotal - 5,
+            thickness: mdfThickness,
+            edgeBanding: 'Sem Fita',
+            description: 'Fundo estrutural recuado'
+        });
+
+        // Rodapé Frontal e Traseiro
         if (plinthHeight > 0) {
             list.push({
-                name: 'Sarrafo de Rodapé',
+                name: 'Régua de Rodapé',
                 quantity: 2,
-                height: internalWidth,
+                height: internalWidthTotal,
                 width: plinthHeight,
                 thickness: mdfThickness,
-                edgeBanding: '1L 0A',
-                description: 'Estrutura inferior de vedação/apoio do rodapé'
+                edgeBanding: '1L',
+                description: 'Rodapés inferior (Frontal e Traseiro)'
             });
         }
 
         // ---------------------------------------------------------------------
-        // 6. FUNDO TRASEIRO (1 Peça de 6mm)
-        // Regra de Fixação com Rebaixo (Rasgo/Rebaixo):
-        // Rebaixo Traseiro: Profundidade = 7mm, Encaixe/Passe = 13mm
-        // O fundo entra 7mm em cada lateral e 7mm na base e sarrafo.
-        // Fórmula:
-        // Altura do Fundo = Altura Interna Útil da Caixa + (2 * BACK_PANEL.REBATE_DEPTH)
-        // Largura do Fundo = Largura Interna + (2 * BACK_PANEL.REBATE_DEPTH)
-        // Altura Interna Útil = Altura Corpo - Base (mdfThickness) - Sarrafo (mdfThickness)
+        // 3. DIVISÓRIA VERTICAL INTERNA
         // ---------------------------------------------------------------------
-        const internalHeight = cabinetBodyHeight - (2 * mdfThickness);
-        const backPanelHeight = internalHeight + (2 * BACK_PANEL.REBATE_DEPTH);
-        const backPanelWidth = internalWidth + (2 * BACK_PANEL.REBATE_DEPTH);
-
-        list.push({
-            name: 'Painel de Fundo',
-            quantity: 1,
-            height: backPanelHeight,
-            width: backPanelWidth,
-            thickness: BACK_PANEL.THICKNESS,
-            edgeBanding: '0L 0A',
-            description: `Fundo de ${BACK_PANEL.THICKNESS}mm encaixado em rebaixo de ${BACK_PANEL.REBATE_DEPTH}x${BACK_PANEL.REBATE_WIDTH}mm`
-        });
+        if (hasDivider) {
+            list.push({
+                name: 'Divisória Vertical Central',
+                quantity: 1,
+                height: internalHeight,
+                width: internalDepth,
+                thickness: mdfThickness,
+                edgeBanding: '1L',
+                description: 'Separação física entre o vão das gavetas e o vão das portas'
+            });
+        }
 
         // ---------------------------------------------------------------------
-        // 7. GAVETAS (Caixas Internas e Frentes)
-        // Se houver gavetas configuradas para o balcão
+        // 4. PRATELEIRAS INTERNAS
+        // ---------------------------------------------------------------------
+        if (shelfCount > 0) {
+            // A prateleira ocupa o vão reservado para as portas (ou vão total se sem divisória)
+            const shelfWidth = hasDivider ? doorBayWidth - 2 : internalWidthTotal - 2; // -2mm para folga de montagem
+
+            list.push({
+                name: 'Prateleira Interna',
+                quantity: shelfCount,
+                height: shelfWidth,
+                width: internalDepth,
+                thickness: mdfThickness,
+                edgeBanding: '1L',
+                description: `Prateleiras ajustáveis no vão das portas (${shelfWidth}mm de largura)`
+            });
+        }
+
+        // ---------------------------------------------------------------------
+        // 5. CAIXAS E FRENTES DE GAVETAS
         // ---------------------------------------------------------------------
         if (drawerCount > 0) {
-            const drawerComponents = this._calculateDrawerBoxes(drawerCount, internalWidth, internalHeight, depth, mdfThickness);
-            list.push(...drawerComponents);
+            // Largura da frente da gaveta
+            const drawerFrontWidth = hasDivider ? drawerBayWidth - 3 : internalWidthTotal - 3;
+            const drawerFrontHeight = Math.round((internalHeight - ((drawerCount + 1) * 3)) / drawerCount);
 
-            const drawerFronts = this._calculateDrawerFronts(drawerCount, width, cabinetBodyHeight, hasProfileHandle, mdfThickness);
-            list.push(...drawerFronts);
+            // Folga das corrediças telescópicas = 26mm no total (13mm de cada lado)
+            const drawerBoxWidth = (hasDivider ? drawerBayWidth : internalWidthTotal) - (2 * mdfThickness) - 26;
+            const drawerBoxDepth = Math.min(500, Math.max(250, Math.floor((depth - 50) / 50) * 50));
+            const drawerBoxHeight = Math.max(90, drawerFrontHeight - 40);
+
+            // Frentes de Gaveta
+            list.push({
+                name: 'Frente de Gaveta',
+                quantity: drawerCount,
+                height: drawerFrontWidth,
+                width: drawerFrontHeight,
+                thickness: mdfThickness,
+                edgeBanding: '4 Lados',
+                description: `Frentes externas do vão (${drawerFrontWidth}x${drawerFrontHeight}mm)`
+            });
+
+            // Laterais da Gaveta
+            list.push({
+                name: 'Lateral de Gaveta',
+                quantity: drawerCount * 2,
+                height: drawerBoxDepth,
+                width: drawerBoxHeight,
+                thickness: mdfThickness,
+                edgeBanding: '1L',
+                description: 'Lados da caixa interna da gaveta'
+            });
+
+            // Cabeceiras (Frente e Traseira da Caixa da Gaveta)
+            const drawerHeadWidth = drawerBoxWidth - (2 * mdfThickness);
+            list.push({
+                name: 'Cabeceira de Gaveta (Frente/Fundo)',
+                quantity: drawerCount * 2,
+                height: drawerHeadWidth,
+                width: drawerBoxHeight,
+                thickness: mdfThickness,
+                edgeBanding: '1L',
+                description: 'Montagem interna da caixa de gaveta'
+            });
+
+            // Fundo da Gaveta
+            list.push({
+                name: 'Fundo da Gaveta',
+                quantity: drawerCount,
+                height: drawerHeadWidth,
+                width: drawerBoxDepth,
+                thickness: mdfThickness,
+                edgeBanding: 'Sem Fita',
+                description: 'Fundo da caixa de gaveta'
+            });
+        }
+
+        // ---------------------------------------------------------------------
+        // 6. PORTAS
+        // ---------------------------------------------------------------------
+        if (doorCount > 0) {
+            const targetWidth = hasDivider ? doorBayWidth : internalWidthTotal;
+            const doorWidth = Math.round((targetWidth - ((doorCount + 1) * 3)) / (hasDivider ? Math.min(doorCount, 2) : doorCount));
+            const doorHeight = internalHeight - 6;
+
+            list.push({
+                name: 'Porta de Abrir',
+                quantity: doorCount,
+                height: doorHeight,
+                width: doorWidth,
+                thickness: mdfThickness,
+                edgeBanding: '4 Lados',
+                description: `Portas externas de abrigo no vão de ${targetWidth}mm`
+            });
         }
 
         return list;
-    }
-
-    /**
-     * Calcula as caixas internas de gaveta (Laterais, Cabeceiras e Fundo).
-     * @private
-     * @param {number} count Quantidade de gavetas.
-     * @param {number} internalWidth Largura interna do vão.
-     * @param {number} internalHeight Altura interna útil do vão.
-     * @param {number} cabinetDepth Profundidade total do móvel.
-     * @param {number} mdfThickness Espessura do MDF.
-     * @returns {CuttingItem[]}
-     */
-    _calculateDrawerBoxes(count, internalWidth, internalHeight, cabinetDepth, mdfThickness) {
-        const drawerItems = [];
-
-        // Largura da gaveta descontando folga telescópica total (26mm -> 13mm cada lado)
-        const drawerBoxOuterWidth = internalWidth - SLIDE_CLEARANCE.TOTAL;
-
-        // Profundidade padrão da gaveta (Folga recomendada de 50mm referente à profundidade total)
-        const drawerDepth = Math.floor((cabinetDepth - 50) / 50) * 50; 
-
-        // Altura média padrão de laterais de gaveta (Proporcional à quantidade de gavetas)
-        const availableHeightPerDrawer = internalHeight / count;
-        const drawerSideHeight = Math.max(100, Math.min(200, Math.floor(availableHeightPerDrawer - 50)));
-
-        // 1. Laterais da Gaveta (2 por gaveta)
-        drawerItems.push({
-            name: 'Gaveta - Lateral',
-            quantity: count * 2,
-            height: drawerDepth,
-            width: drawerSideHeight,
-            thickness: mdfThickness,
-            edgeBanding: '1L 0A',
-            description: 'Laterais estruturais das caixas de gaveta'
-        });
-
-        // 2. Cabeceiras/Frentes Internas da Gaveta (2 por gaveta: Frente e Traseira)
-        // Fórmula: Largura Externa da Gaveta - (2 * Espessura MDF da Gaveta)
-        const drawerHeaderWidth = drawerBoxOuterWidth - (2 * mdfThickness);
-        drawerItems.push({
-            name: 'Gaveta - Cabeceira (Frente/Trás Interna)',
-            quantity: count * 2,
-            height: drawerHeaderWidth,
-            width: drawerSideHeight,
-            thickness: mdfThickness,
-            edgeBanding: '1L 0A',
-            description: 'Cabeceiras frontais e traseiras da caixa de gaveta'
-        });
-
-        // 3. Fundo da Gaveta em 6mm (1 por gaveta)
-        // Encaixado no canal inferior
-        drawerItems.push({
-            name: 'Gaveta - Fundo',
-            quantity: count,
-            height: drawerDepth,
-            width: drawerBoxOuterWidth,
-            thickness: BACK_PANEL.THICKNESS,
-            edgeBanding: '0L 0A',
-            description: 'Fundo da caixa de gaveta'
-        });
-
-        return drawerItems;
-    }
-
-    /**
-     * Calcula as dimensões das frentes externas das gavetas aplicando os descontos de fita de borda e perfis.
-     * @private
-     * @param {number} count Quantidade de gavetas.
-     * @param {number} totalWidth Largura total externa do móvel.
-     * @param {number} cabinetBodyHeight Altura total do corpo útil.
-     * @param {boolean} hasProfileHandle Indica se utiliza puxador perfil de alumínio gola.
-     * @param {number} mdfThickness Espessura do MDF.
-     * @returns {CuttingItem[]}
-     */
-    _calculateDrawerFronts(count, totalWidth, cabinetBodyHeight, hasProfileHandle, mdfThickness) {
-        // Folga padrão de revelo entre frentes e/ou estrutura = 3mm por junta
-        const GAP_BETWEEN_FRONTS = 3;
-        
-        // Desconto do Puxador Perfil de Alumínio Gola na altura (35mm por perfil)
-        const PROFILE_HANDLE_CLEARANCE = hasProfileHandle ? 35 : 0;
-
-        // Dimensão Bruta da Frente
-        const grossFrontWidth = totalWidth - 6; // Revelos laterais de 3mm de cada lado
-        const totalGapsHeight = (count + 1) * GAP_BETWEEN_FRONTS;
-        const totalProfilesHeight = count * PROFILE_HANDLE_CLEARANCE;
-        const grossFrontHeight = Math.floor((cabinetBodyHeight - totalGapsHeight - totalProfilesHeight) / count);
-
-        // Aplicação do desconto de Fita de Borda (EDGE_BANDING_DISCOUNT_PER_EDGE = 1mm por borda)
-        // Desconto total na largura = 2 * 1mm = 2mm
-        // Desconto total na altura = 2 * 1mm = 2mm
-        const netFrontWidth = grossFrontWidth - (2 * EDGE_BANDING_DISCOUNT_PER_EDGE);
-        const netFrontHeight = grossFrontHeight - (2 * EDGE_BANDING_DISCOUNT_PER_EDGE);
-
-        return [{
-            name: 'Frente de Gaveta (Medida de Corte MDF)',
-            quantity: count,
-            height: netFrontHeight,
-            width: netFrontWidth,
-            thickness: mdfThickness,
-            edgeBanding: '2L 2A', // Aplicar fita em todas as 4 bordas
-            description: `Frente externa. Aplicado desconto de ${EDGE_BANDING_DISCOUNT_PER_EDGE}mm por borda de fita de borda.`
-        }];
-    }
-
-    /**
-     * Cobre o cálculo de armários aéreos.
-     * @private
-     * @returns {CuttingItem[]}
-     */
-    _calculateWallCabinet() {
-        const { height, width, depth, mdfThickness } = this.state;
-        const list = [];
-
-        // Laterais
-        list.push({
-            name: 'Lateral Esquerda / Direita',
-            quantity: 2,
-            height: height,
-            width: depth,
-            thickness: mdfThickness,
-            edgeBanding: '1L 2A',
-            description: 'Laterais do armário aéreo'
-        });
-
-        // Teto e Base
-        const internalWidth = width - (2 * mdfThickness);
-        list.push({
-            name: 'Base Inferior e Teto Superior',
-            quantity: 2,
-            height: internalWidth,
-            width: depth,
-            thickness: mdfThickness,
-            edgeBanding: '1L 0A',
-            description: 'Bases horizontal superior e inferior'
-        });
-
-        // Prateleira Interna com Recuo (SHELF_RECESS = 10mm)
-        const shelfDepth = depth - SHELF_RECESS;
-        list.push({
-            name: 'Prateleira Interna',
-            quantity: 1,
-            height: internalWidth,
-            width: shelfDepth,
-            thickness: mdfThickness,
-            edgeBanding: '1L 0A',
-            description: `Prateleira interna com recuo de ${SHELF_RECESS}mm na profundidade`
-        });
-
-        // Fundo Encaixado
-        const internalHeight = height - (2 * mdfThickness);
-        list.push({
-            name: 'Painel de Fundo',
-            quantity: 1,
-            height: internalHeight + (2 * BACK_PANEL.REBATE_DEPTH),
-            width: internalWidth + (2 * BACK_PANEL.REBATE_DEPTH),
-            thickness: BACK_PANEL.THICKNESS,
-            edgeBanding: '0L 0A',
-            description: 'Fundo traseiro do aéreo'
-        });
-
-        return list;
-    }
-
-    /**
-     * Cobre o cálculo de armário baixo/cozinha.
-     * @private
-     * @returns {CuttingItem[]}
-     */
-    _calculateKitchenBase() {
-        // Reutiliza e estende os conceitos do balcão de pia agregando teto completo
-        return this._calculateSinkCabinet();
-    }
-
-    /**
-     * Cobre o cálculo de guarda-roupas.
-     * @private
-     * @returns {CuttingItem[]}
-     */
-    _calculateWardrobe() {
-        // Implementação padronizada base para estruturas de guarda-roupa
-        return this._calculateSinkCabinet();
     }
 }
