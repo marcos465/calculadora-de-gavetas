@@ -1,7 +1,10 @@
 /**
  * @fileoverview Ponto de entrada principal da aplicação MarcenariaCalc.
- * Unifica o fluxo de validação da triagem, execução dos motores de cálculo
- * (lista de corte e ferragens), renderização da interface e exportação para CSV.
+ * Responsável por gerenciar o ciclo de vida da aplicação client-side, escutar os
+ * eventos do formulário de triagem, orquestrar os motores de cálculo de peças e ferragens,
+ * e acionar a interface de exibição (CutListUI).
+ * 
+ * Compatível com execução 100% Client-side e hospedagem no GitHub Pages.
  * 
  * @module app
  */
@@ -10,19 +13,15 @@ import { FurnitureState } from './models/FurnitureState.js';
 import { CuttingListEngine } from './modules/engine/cuttingList.js';
 import { HardwareListEngine } from './modules/engine/hardwareList.js';
 import { CutListUI } from './modules/display/cutListUI.js';
-import { exportToCutListCSV } from './utils/csvExporter.js';
 
 /**
- * Classe principal de orquestração do ecossistema Client-Side.
+ * Classe responsável pelo gerenciamento de eventos e estado da aplicação principal.
  */
-class App {
+class MarcenariaCalcApp {
+    /**
+     * Inicializa os seletores da aplicação e instâncias de módulos.
+     */
     constructor() {
-        /**
-         * Instância compartilhada do estado do móvel.
-         * @type {FurnitureState|null}
-         */
-        this.furnitureState = null;
-
         /**
          * Instância do renderizador da interface gráfica da lista de corte.
          * @type {CutListUI|null}
@@ -30,162 +29,139 @@ class App {
         this.cutListUI = null;
 
         /**
-         * Armazena em memória a lista de corte calculada mais recente para exportação.
-         * @type {Array<import('./modules/engine/cuttingList.js').CuttingItem>}
+         * Elemento HTML do formulário de triagem.
+         * @type {HTMLFormElement|null}
          */
-        this.currentCuttingList = [];
+        this.formElement = null;
 
         /**
-         * Armazena em memória a lista de ferragens calculada mais recente.
-         * @type {Array<Object>}
+         * Elemento contêiner do formulário de triagem para alternância visual/scroll.
+         * @type {HTMLElement|null}
          */
-        this.currentHardwareList = [];
+        this.formContainer = null;
+
+        /**
+         * Elemento contêiner dos resultados.
+         * @type {HTMLElement|null}
+         */
+        this.resultContainer = null;
     }
 
     /**
-     * Inicializa os módulos, seletores de interface e escutadores de eventos principais.
+     * Inicializa a aplicação configurando as instâncias e registrando os ouvintes de eventos.
      * @returns {void}
      */
     init() {
         try {
-            this.furnitureState = new FurnitureState();
-            this.cutListUI = new CutListUI();
+            // Instancia a UI apontando para o contêiner de exibição
+            this.cutListUI = new CutListUI('resultContainer');
 
+            // Captura de elementos do DOM
+            this.formElement = document.getElementById('furniture-form');
+            this.formContainer = document.getElementById('formContainer') || document.querySelector('.form-section') || this.formElement;
+            this.resultContainer = document.getElementById('resultContainer');
+
+            if (!this.formElement) {
+                console.error('[MarcenariaCalcApp] Formulário "#furniture-form" não encontrado no DOM.');
+                return;
+            }
+
+            // Registra os ouvintes de eventos
             this.bindEvents();
+
         } catch (error) {
-            console.error('Erro durante a inicialização do MarcenariaCalc:', error);
-            this.showNotification('Erro ao inicializar a aplicação. Verifique o console.', 'error');
+            console.error('[MarcenariaCalcApp] Erro crítico ao inicializar a aplicação:', error);
         }
     }
 
     /**
-     * Registra os eventos da interface do usuário (Formulário/Triagem e Botões Globais).
+     * Registra todos os escutadores de eventos globais do aplicativo.
+     * @private
      * @returns {void}
      */
     bindEvents() {
-        const formTriage = document.getElementById('formTriage') || document.getElementById('furnitureForm');
-        
-        if (formTriage) {
-            formTriage.addEventListener('submit', (event) => this.handleTriageSubmit(event));
-        }
-
-        // Delegação de evento ou escuta direta no container de resultados para garantir escuta do botão de exportação
-        const resultContainer = document.getElementById('resultContainer') || document.body;
-        resultContainer.addEventListener('click', (event) => this.handleGlobalClick(event));
+        this.formElement.addEventListener('submit', (event) => this.handleFormSubmit(event));
     }
 
     /**
-     * Processa a submissão e validação do formulário de triagem de marcenaria.
-     * @param {Event} event - Evento nativo de submissão do formulário.
+     * Processa a submissão do formulário de triagem, realiza os cálculos e atualiza a UI.
+     * 
+     * @private
+     * @param {SubmitEvent} event - Evento de submissão do formulário.
      * @returns {void}
      */
-    handleTriageSubmit(event) {
+    handleFormSubmit(event) {
         event.preventDefault();
 
         try {
-            // 1. Atualiza o estado da aplicação coletando os inputs do formulário
-            const formElement = event.target;
-            this.furnitureState.updateFromForm(formElement);
+            // 1. Extração dos dados do formulário
+            const formData = new FormData(this.formElement);
+            const rawData = Object.fromEntries(formData.entries());
 
-            // Validação das entradas fornecidas
-            const validation = this.furnitureState.validate();
-            if (!validation.isValid) {
-                this.showNotification(`Atenção: ${validation.message}`, 'warning');
-                return;
-            }
-
-            // 2. Executa os motores de cálculo geométrico e quantitativo
-            const cuttingEngine = new CuttingListEngine(this.furnitureState);
-            const hardwareEngine = new HardwareListEngine(this.furnitureState);
-
-            this.currentCuttingList = cuttingEngine.generateList();
-            this.currentHardwareList = hardwareEngine.generateList();
-
-            // 3. Renderiza os resultados na interface do usuário
-            this.cutListUI.render({
-                cuttingList: this.currentCuttingList,
-                hardwareList: this.currentHardwareList,
-                state: this.furnitureState
+            // 2. Instanciação do modelo de estado do móvel com conversão e sanitização de dados
+            const state = new FurnitureState({
+                width: Number(rawData.width || rawData.largura),
+                height: Number(rawData.height || rawData.altura),
+                depth: Number(rawData.depth || rawData.profundidade),
+                mdfThickness: Number(rawData.mdfThickness || rawData.espessuraMdf || 15),
+                backPanelThickness: Number(rawData.backPanelThickness || rawData.espessuraFundo || 3),
+                doorsQuantity: Number(rawData.doorsQuantity || rawData.qtdPortas || 2),
+                shelvesQuantity: Number(rawData.shelvesQuantity || rawData.qtdPrateleiras || 1),
+                drawersQuantity: Number(rawData.drawersQuantity || rawData.qtdGavetas || 0),
+                rawInputs: rawData
             });
 
-            this.showNotification('Lista de corte e ferragens calculadas com sucesso!', 'success');
-
-        } catch (error) {
-            console.error('Erro ao processar o cálculo do balcão:', error);
-            this.showNotification('Erro interno ao calcular a lista de corte. Verifique os dados inseridos.', 'error');
-        }
-    }
-
-    /**
-     * Trata os cliques globais na interface, capturando interações com botões dinâmicos (ex: #btnExportCSV).
-     * @param {MouseEvent} event - Evento nativo de clique.
-     * @returns {void}
-     */
-    handleGlobalClick(event) {
-        const target = /** @type {HTMLElement} */ (event.target);
-        const exportBtn = target.closest('#btnExportCSV');
-
-        if (exportBtn) {
-            event.preventDefault();
-            this.handleCSVExport();
-        }
-    }
-
-    /**
-     * Executa a exportação da lista de corte calculada para o formato CSV do CutList Optimizer.
-     * @returns {void}
-     */
-    handleCSVExport() {
-        try {
-            if (!Array.isArray(this.currentCuttingList) || this.currentCuttingList.length === 0) {
-                this.showNotification('A lista de corte está vazia. Calcule o projeto antes de exportar.', 'warning');
-                return;
+            // Validação simples do modelo antes dos cálculos
+            if (typeof state.validate === 'function') {
+                const validation = state.validate();
+                if (!validation.isValid) {
+                    alert(`Atenção nos dados informados: ${validation.message}`);
+                    return;
+                }
             }
 
-            // Dispara o utilitário nativo de download do CSV
-            exportToCutListCSV(this.currentCuttingList, 'corte_balcao_cutlist.csv');
-            
-            this.showNotification('Arquivo CSV exportado com sucesso para o CutList Optimizer!', 'success');
+            // 3. Execução dos motores de cálculo
+            const cuttingList = CuttingListEngine.calculate(state);
+            const hardwareList = HardwareListEngine.calculate(state);
+
+            // 4. Disparo da renderização na interface do usuário com callback de edição
+            this.cutListUI.render(
+                { cuttingList, hardwareList, state },
+                () => this.handleEditProject()
+            );
+
+            // 5. Transição suave de tela para o container de resultados
+            if (this.resultContainer) {
+                this.resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
 
         } catch (error) {
-            console.error('Erro ao exportar a lista de corte para CSV:', error);
-            this.showNotification('Ocorreu uma falha ao gerar o arquivo CSV de corte.', 'error');
+            console.error('[MarcenariaCalcApp] Erro durante o processamento do cálculo:', error);
+            alert('Ocorreu um erro ao calcular o plano de corte. Verifique os valores preenchidos.');
         }
     }
 
     /**
-     * Exibe mensagens visuais e alertas de feedback para o usuário na interface.
-     * @param {string} message - Texto da mensagem.
-     * @param {'success'|'warning'|'error'|'info'} [type='info'] - Nível visual da notificação.
+     * Permite ao usuário retornar ao formulário para ajustar parâmetros do móvel.
+     * Realiza rolagem suave de volta para a seção do formulário de triagem.
+     * 
      * @returns {void}
      */
-    showNotification(message, type = 'info') {
-        const notificationContainer = document.getElementById('notificationContainer');
-
-        if (notificationContainer) {
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.textContent = message;
-
-            notificationContainer.appendChild(toast);
-
-            setTimeout(() => {
-                toast.classList.add('fade-out');
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
-        } else {
-            // Fallback limpo caso o container de notificações não exista no DOM
-            if (type === 'error' || type === 'warning') {
-                alert(message);
-            } else {
-                console.log(`[${type.toUpperCase()}] ${message}`);
+    handleEditProject() {
+        if (this.formContainer) {
+            this.formContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            
+            // Foca no primeiro campo input do formulário para facilitar a usabilidade
+            const firstInput = this.formElement ? this.formElement.querySelector('input, select') : null;
+            if (firstInput) {
+                setTimeout(() => firstInput.focus({ preventScroll: true }), 400);
             }
         }
     }
 }
 
-// Inicialização segura da aplicação quando a árvore DOM estiver totalmente carregada
+// Inicialização segura após o carregamento completo do DOM
 document.addEventListener('DOMContentLoaded', () => {
-    const app = new App();
+    const app = new MarcenariaCalcApp();
     app.init();
 });
