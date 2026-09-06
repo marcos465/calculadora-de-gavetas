@@ -163,6 +163,7 @@ export class CuttingListEngine {
         // ---------------------------------------------------------------------
         const temDivisoria = (gavetaCount > 0 && portaCount > 0) || (larguraTotal > 800 && gavetaCount > 0 && drawerLayout !== 'FULL_WIDTH');
         const qtdDivisorias = temDivisoria ? 1 : 0;
+        const qtdLaterais = 2;
 
         if (temDivisoria) {
             const alturaDivisoria = alturaTotal - alturaRodape - espessuraMDF - LARGURA_REGUA_SUPERIOR;
@@ -180,35 +181,24 @@ export class CuttingListEngine {
         }
 
         // ---------------------------------------------------------------------
-        // 7. CÁLCULO DE PRUMADAS E LARGURA DE FRENTES
+        // 7. GEOMETRIA DE VÃOS LÍQUIDOS E COLUNAS
         // ---------------------------------------------------------------------
-        // totalColunas = quantidade total de vãos verticais de frentes
+        // Determina quantas colunas estruturais existem (ex: 2 portas + 1 coluna gaveta = 3 colunas)
         const totalColunas = portaCount + (gavetaCount > 0 ? 1 : 0);
 
-        let larguraFrenteUnica = 0;
+        let larguraColuna = 0;
+        let mdfTotal = 0;
+        let vaoLiquidoTotal = 0;
 
         if (totalColunas > 0) {
-            // totalPrumadas = 2 + (qtdDivisorias * 2)
-            const totalPrumadas = 2 + (qtdDivisorias * 2);
-
-            // coberturaTotal = totalPrumadas * 6
-            const coberturaTotal = totalPrumadas * 6;
-
-            // mdfTotal = somatória das espessuras das laterais e divisórias
-            const mdfTotal = (2 * espessuraMDF) + (qtdDivisorias * espessuraMDF);
-
-            // Junções de pares de portas dentro de um mesmo vão ou adjacentes
-            const juncoesParesPortas = portaCount > 1 ? Math.floor(portaCount / 2) : 0;
-
-            // vlt = larguraTotal - mdfTotal + coberturaTotal - (juncoesParesPortas * 4)
-            const vlt = larguraTotal - mdfTotal + coberturaTotal - (juncoesParesPortas * 4);
-
-            // larguraFrenteUnica = vlt / totalColunas
-            larguraFrenteUnica = vlt / totalColunas;
+            // Regra 1: Cálculo da Coluna Base (Vão Líquido)
+            mdfTotal = (qtdLaterais + qtdDivisorias) * espessuraMDF;
+            vaoLiquidoTotal = larguraTotal - mdfTotal;
+            larguraColuna = vaoLiquidoTotal / totalColunas;
         }
 
         // ---------------------------------------------------------------------
-        // 8. CÁLCULO DA ALTURA DAS FRENTES (PORTAS E GAVETAS)
+        // 8. ALTURA DAS FRENTES (PORTAS E GAVETAS)
         // ---------------------------------------------------------------------
         const espessuraBase = espessuraMDF;
         const vaoVerticalBruto = alturaTotal - alturaRodape - espessuraBase - LARGURA_REGUA_SUPERIOR + 12;
@@ -216,35 +206,37 @@ export class CuttingListEngine {
         // Altura da Porta Pronta
         const alturaPortaPronta = vaoVerticalBruto - 35;
 
-        // Regra 1: Cálculo exato da Altura da Frente de Gaveta
+        // Regra 5: Altura das Frentes de Gaveta (Mantida)
         // alturaFrenteGaveta = ((alturaPortaPronta + 35) / qtdGavetas) - 35 - 2
         let alturaFrenteGaveta = 0;
         if (gavetaCount > 0) {
             alturaFrenteGaveta = ((alturaPortaPronta + 35) / gavetaCount) - 35 - 2;
         }
 
-        // Inserção das Frentes de Gaveta na lista
+        // ---------------------------------------------------------------------
+        // 9. FRENTES DE GAVETA & CAIXA DE GAVETA
+        // ---------------------------------------------------------------------
         if (gavetaCount > 0) {
+            // Regra 2: Largura das Frentes de Gaveta
+            const larguraFrenteGaveta = larguraColuna + 12;
+
             list.push({
                 name: 'Frente de Gaveta',
                 quantity: gavetaCount,
-                height: Number(larguraFrenteUnica.toFixed(2)),
+                height: Number(larguraFrenteGaveta.toFixed(2)),
                 width: Number(alturaFrenteGaveta.toFixed(2)),
                 thickness: espessuraMDF,
                 edgeBanding: '4 Lados',
-                description: `Frente externa para coluna de gavetas em largura única de ${larguraFrenteUnica.toFixed(1)}mm`
+                description: `Frente externa para coluna de gavetas (${larguraFrenteGaveta.toFixed(1)}mm de largura)`
             });
 
-            // -----------------------------------------------------------------
-            // 9. ESTRUTURA DA CAIXA DA GAVETA (MDF GAVETA)
-            // -----------------------------------------------------------------
+            // Regra 6: Preservação da Caixa de Gaveta
+            // Folga de 26mm para corrediças telescópicas mantida
             const alturaLateralGaveta = alturaFrenteGaveta - 20;
             const alturaFrontalTraseiroGaveta = alturaLateralGaveta - 15;
 
-            // Vão interno da gaveta por módulo
-            const larguraVaoInternoGaveta = temDivisoria
-                ? ((larguraTotal - (2 * espessuraMDF) - espessuraMDF) / (totalColunas > 1 ? totalColunas : 2))
-                : (larguraTotal - (2 * espessuraMDF));
+            // Determinação do Vão Interno da Gaveta com base na largura da coluna
+            const larguraVaoInternoGaveta = larguraColuna;
 
             const larguraFrontalTraseiroGaveta = larguraVaoInternoGaveta - (2 * espessuraMDFGaveta) - SLIDE_CLEARANCE.TOTAL;
             const profundidadeGaveta = Math.min(550, Math.max(250, Math.floor((profundidadeTotal - 50) / 50) * 50));
@@ -268,7 +260,7 @@ export class CuttingListEngine {
                 width: Number(alturaFrontalTraseiroGaveta.toFixed(2)),
                 thickness: espessuraMDFGaveta,
                 edgeBanding: '1L',
-                description: 'Painel frontal e traseiro da caixa interna da gaveta'
+                description: 'Painel frontal e traseiro da caixa interna da gaveta (com desconto de 26mm das corrediças)'
             });
 
             // Fundo da Gaveta (1x por gaveta - MDF 6mm)
@@ -284,39 +276,71 @@ export class CuttingListEngine {
             });
         }
 
-        // Inserção das Portas na lista
+        // ---------------------------------------------------------------------
+        // 10. PORTAS DE ABRIR
+        // ---------------------------------------------------------------------
         if (portaCount > 0) {
-            list.push({
-                name: 'Porta de Abrir',
-                quantity: portaCount,
-                height: Number(larguraFrenteUnica.toFixed(2)),
-                width: Number(alturaPortaPronta.toFixed(2)),
-                thickness: espessuraMDF,
-                edgeBanding: '4 Lados',
-                description: `Porta frontal em prumada uniforme de ${larguraFrenteUnica.toFixed(1)}mm`
-            });
+            // Regra 3: Largura das Portas
+            if (portaCount === 1) {
+                // Caso Porta Única (1 coluna)
+                const larguraPorta = larguraColuna + 12;
+                list.push({
+                    name: 'Porta de Abrir',
+                    quantity: 1,
+                    height: Number(larguraPorta.toFixed(2)),
+                    width: Number(alturaPortaPronta.toFixed(2)),
+                    thickness: espessuraMDF,
+                    edgeBanding: '4 Lados',
+                    description: `Porta de abrir única para vão de 1 coluna (${larguraPorta.toFixed(1)}mm de largura)`
+                });
+            } else if (portaCount === 2) {
+                // Caso Par de Portas (2 colunas)
+                const vaoLiquidoPar = larguraColuna * 2;
+                const larguraCadaPorta = (vaoLiquidoPar + 12 - 4) / 2;
+                list.push({
+                    name: 'Porta de Abrir',
+                    quantity: 2,
+                    height: Number(larguraCadaPorta.toFixed(2)),
+                    width: Number(alturaPortaPronta.toFixed(2)),
+                    thickness: espessuraMDF,
+                    edgeBanding: '4 Lados',
+                    description: `Par de portas para vão contínuo de 2 colunas (${larguraCadaPorta.toFixed(1)}mm de largura cada)`
+                });
+            } else {
+                // Fallback de distribuição genérica para N portas em vãos múltiplos
+                const vaoLiquidoGeral = larguraColuna * portaCount;
+                const larguraCadaPorta = (vaoLiquidoGeral + 12 - (4 * (portaCount - 1))) / portaCount;
+                list.push({
+                    name: 'Porta de Abrir',
+                    quantity: portaCount,
+                    height: Number(larguraCadaPorta.toFixed(2)),
+                    width: Number(alturaPortaPronta.toFixed(2)),
+                    thickness: espessuraMDF,
+                    edgeBanding: '4 Lados',
+                    description: `${portaCount} portas distribuídas no vão (${larguraCadaPorta.toFixed(1)}mm de largura cada)`
+                });
+            }
         }
 
         // ---------------------------------------------------------------------
-        // 10. PRATELEIRAS INTERNAS (VÃO DAS PORTAS)
+        // 11. PRATELEIRAS INTERNAS (VÃO DAS PORTAS)
         // ---------------------------------------------------------------------
         if (prateleiraCount > 0) {
             let comprimentoPrateleira = 0;
 
-            // Regra 2: Cálculo do Comprimento das Prateleiras Internas para vão de portas
-            if (portaCount === 2) {
-                // comprimentoPrateleira = (2 * larguraFrenteUnica) + 4 - 12 (ou seja: (2 * larguraFrenteUnica) - 8)
-                comprimentoPrateleira = (2 * larguraFrenteUnica) - 8;
+            // Regra 4: Comprimento da Prateleira Interna (Vão das Portas)
+            if (portaCount >= 2) {
+                // Para o vão cobrindo 2 colunas
+                comprimentoPrateleira = larguraColuna * 2;
             } else if (portaCount === 1) {
-                comprimentoPrateleira = larguraFrenteUnica - 8;
-            } else if (portaCount > 2) {
-                comprimentoPrateleira = (portaCount * larguraFrenteUnica) - (4 * (portaCount - 1)) - 8;
+                // Vão cobrindo 1 coluna
+                comprimentoPrateleira = larguraColuna;
             } else {
-                // Caso não haja portas (apenas gavetas/vão aberto)
-                comprimentoPrateleira = larguraTotal - (2 * espessuraMDF) - 2;
+                // Caso geral/sem portas
+                comprimentoPrateleira = vaoLiquidoTotal > 0 ? vaoLiquidoTotal : larguraTotal - (2 * espessuraMDF);
             }
 
-            // Profundidade da prateleira = Profundidade total - 10mm (SHELF_RECESS)
+            // Profundidade mantida: profundidadeTotal - 10
             const profundidadePrateleira = profundidadeTotal - SLIDE_CLEARANCE.SHELF_RECESS;
 
             list.push({
@@ -326,7 +350,7 @@ export class CuttingListEngine {
                 width: Math.round(profundidadePrateleira),
                 thickness: espessuraMDF,
                 edgeBanding: '1L',
-                description: `Prateleira para vão de portas (${comprimentoPrateleira.toFixed(1)}mm de comprimento x ${Math.round(profundidadePrateleira)}mm de profundidade)`
+                description: `Prateleira interna para vão de portas (${comprimentoPrateleira.toFixed(1)}mm de comprimento x ${Math.round(profundidadePrateleira)}mm de profundidade)`
             });
         }
 
