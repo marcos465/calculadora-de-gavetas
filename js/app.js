@@ -21,11 +21,11 @@ function initApp() {
         return;
     }
 
-    // Instancia o estado persistente do móvel
+    // Instância persistente do estado do móvel
     const furnitureState = new FurnitureState();
 
     /**
-     * Alterna a visibilidade para a tela de triagem/configuração.
+     * Alterna a visibilidade para a tela de triagem/configuração preservando os dados atuais.
      */
     const showTriagemScreen = () => {
         resultsRegion.innerHTML = '';
@@ -45,7 +45,7 @@ function initApp() {
         console.log('Parâmetros de Entrada:', validatedState.toObject());
 
         try {
-            // Executa as engines de cálculo
+            // Execução dos cálculos
             const cuttingEngine = new CuttingListEngine(validatedState);
             const cuttingList = cuttingEngine.generateList();
 
@@ -56,13 +56,13 @@ function initApp() {
             console.log('Ferragens Calculadas:', hardwareList);
             console.groupEnd();
 
-            // Esconde o formulário de triagem e renderiza a tela de resultados
+            // Oculta a triagem e limpa/renderiza a exibição de resultados
             triagemRegion.style.display = 'none';
 
             const displayUI = new CutListUI(resultsRegion, showTriagemScreen);
             displayUI.render(cuttingList, hardwareList, validatedState);
 
-            // Rola suavemente para o topo da lista de corte
+            // Rola a tela até o topo para facilitar a visualização dos resultados
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (error) {
             console.error('❌ Erro durante o cálculo do plano de corte:', error);
@@ -70,11 +70,12 @@ function initApp() {
         }
     };
 
-    // Inicializa a aplicação na tela de triagem
+    // Inicialização da aplicação
     showTriagemScreen();
 
     console.log('🚀 MarcenariaCalc - Orquestrador inicializado com sucesso.');
 }
 
 // Garante a execução do script após a montagem do DOM
+document.addEventListener('DOMContentLoaded', initApp);
 document.addEventListener('DOMContentLoaded', initApp);
